@@ -508,3 +508,38 @@ func TestSimultaneousConnectionsAreIsolated(t *testing.T) {
 		}
 	}
 }
+
+func TestWebSocketOriginPolicy(t *testing.T) {
+	ts := startServer(t)
+	tok := ts.pair(t, "phone").AccessToken
+	id := ts.newSession(t, tok)
+
+	dialWithOrigin := func(origin string) (*http.Response, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		c, resp, err := websocket.Dial(ctx, "wss://"+ts.url[len("https://"):]+"/api/v1/sessions/"+id+"/terminal?ticket="+ts.ticket(t, tok, id),
+			&websocket.DialOptions{
+				HTTPClient: &http.Client{Transport: insecureClient().Transport},
+				HTTPHeader: http.Header{"Origin": []string{origin}},
+			})
+		if err == nil {
+			_ = c.CloseNow()
+			// Wait for the agent to detach so the next dial can attach.
+			time.Sleep(100 * time.Millisecond)
+		}
+		return resp, err
+	}
+
+	// Origins of the native webviews (iOS and Android) and local development.
+	for _, origin := range []string{"capacitor://localhost", "ionic://localhost", "https://localhost", "http://localhost:5173"} {
+		if _, err := dialWithOrigin(origin); err != nil {
+			t.Errorf("origin %q rejected: %v", origin, err)
+		}
+	}
+	// Any web page on another origin is refused.
+	for _, origin := range []string{"https://evil.example.com", "https://localhost.evil.example.com"} {
+		if resp, err := dialWithOrigin(origin); err == nil || resp == nil || resp.StatusCode != http.StatusForbidden {
+			t.Errorf("origin %q accepted: err=%v resp=%v", origin, err, resp)
+		}
+	}
+}
