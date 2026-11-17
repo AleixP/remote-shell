@@ -13,20 +13,22 @@ type collector struct {
 	buf strings.Builder
 }
 
-func collect(t *Terminal) *collector {
+func collectSession(s *Session) *collector {
 	c := &collector{}
 	go func() {
-		b := make([]byte, 4096)
+		var seq uint64
 		for {
-			n, err := t.Read(b)
-			if n > 0 {
+			frames, _, closed, wake := s.Output.Snapshot(seq)
+			for _, f := range frames {
 				c.mu.Lock()
-				c.buf.Write(b[:n])
+				c.buf.Write(f.Data)
 				c.mu.Unlock()
+				seq = f.Seq
 			}
-			if err != nil {
+			if closed && len(frames) == 0 {
 				return
 			}
+			<-wake
 		}
 	}()
 	return c

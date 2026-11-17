@@ -17,7 +17,7 @@ func newTestSession(t *testing.T, m *Manager, name string) (*Session, *collector
 	if err != nil {
 		t.Fatalf("create %s: %v", name, err)
 	}
-	return s, collect(s.Terminal)
+	return s, collectSession(s)
 }
 
 // `set /a` prints only the result, so the sum appears in the output but not in

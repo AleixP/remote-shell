@@ -12,6 +12,7 @@ import (
 
 	"github.com/AleixP/remote-shell/agent/internal/auth"
 	"github.com/AleixP/remote-shell/agent/internal/terminal"
+	"github.com/AleixP/remote-shell/agent/internal/ticket"
 )
 
 // Version is the agent version reported by /api/v1/health.
@@ -34,7 +35,10 @@ type Options struct {
 	Auth     *auth.Service
 	Sessions *terminal.Manager
 	Shells   *terminal.Shells
-	Logger   *slog.Logger
+	// TicketTTL is how long a WebSocket connection ticket stays valid
+	// (default 60s).
+	TicketTTL time.Duration
+	Logger    *slog.Logger
 }
 
 // Server is the agent's HTTPS server.
@@ -45,6 +49,8 @@ type Server struct {
 	auth     *auth.Service
 	sessions *terminal.Manager
 	shells   *terminal.Shells
+	tickets  *ticket.Store
+	conns    *connRegistry
 	log      *slog.Logger
 	http     *http.Server
 }
@@ -68,13 +74,23 @@ func New(opts Options) (*Server, error) {
 		log = slog.Default()
 	}
 
-	s := &Server{addr: addr, port: opts.Port, certs: certs, auth: opts.Auth, sessions: opts.Sessions, shells: opts.Shells, log: log}
+	ttl := opts.TicketTTL
+	if ttl <= 0 {
+		ttl = 60 * time.Second
+	}
+	s := &Server{tickets: ticket.NewStore(ttl), conns: newConnRegistry(), addr: addr, port: opts.Port, certs: certs, auth: opts.Auth, sessions: opts.Sessions, shells: opts.Shells, log: log}
+	// A revoked device loses its tickets and its open terminal connections.
+	opts.Auth.OnRevoke(func(deviceID string) {
+		s.tickets.RevokeDevice(deviceID)
+		s.conns.closeDevice(deviceID)
+	})
 	s.http = &http.Server{
 		Handler:           s.handler(),
 		TLSConfig:         certs.tlsConfig(),
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       120 * time.Second,
 		MaxHeaderBytes:    16 << 10,
+		ErrorLog:          slog.NewLogLogger(log.Handler(), slog.LevelWarn),
 	}
 	return s, nil
 }
@@ -102,6 +118,8 @@ func (s *Server) handler() http.Handler {
 	mux.Handle("POST /api/v1/sessions", s.requireAuth(s.handleCreateSession))
 	mux.Handle("GET /api/v1/sessions/{id}", s.requireAuth(s.handleGetSession))
 	mux.Handle("DELETE /api/v1/sessions/{id}", s.requireAuth(s.handleCloseSession))
+	mux.Handle("POST /api/v1/sessions/{id}/connection-ticket", s.requireAuth(s.handleConnectionTicket))
+	mux.HandleFunc("GET /api/v1/sessions/{id}/terminal", s.handleTerminal)
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, http.StatusNotFound, codeNotFound, "The requested resource does not exist.")
 	})

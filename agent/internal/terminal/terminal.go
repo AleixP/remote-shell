@@ -40,6 +40,9 @@ type Terminal struct {
 
 	lastActivity atomic.Int64 // unix nanoseconds of the last input or output
 
+	sizeMu     sync.Mutex
+	cols, rows int
+
 	mu       sync.Mutex
 	exitCode int
 	closed   bool
@@ -97,7 +100,7 @@ func Start(opts Options) (*Terminal, error) {
 		return nil, fmt.Errorf("terminal: start shell: %w", err)
 	}
 
-	t := &Terminal{pty: p, cmd: cmd, done: make(chan struct{})}
+	t := &Terminal{pty: p, cmd: cmd, done: make(chan struct{}), cols: opts.Cols, rows: opts.Rows}
 	t.touch()
 	go t.wait()
 	return t, nil
@@ -141,7 +144,20 @@ func (t *Terminal) Resize(cols, rows int) error {
 	if err := validateSize(cols, rows); err != nil {
 		return err
 	}
-	return t.pty.Resize(cols, rows)
+	if err := t.pty.Resize(cols, rows); err != nil {
+		return err
+	}
+	t.sizeMu.Lock()
+	t.cols, t.rows = cols, rows
+	t.sizeMu.Unlock()
+	return nil
+}
+
+// Size returns the current terminal dimensions.
+func (t *Terminal) Size() (cols, rows int) {
+	t.sizeMu.Lock()
+	defer t.sizeMu.Unlock()
+	return t.cols, t.rows
 }
 
 // Done is closed when the shell process has exited.

@@ -26,7 +26,7 @@ func toSessionJSON(s *terminal.Session) sessionJSON {
 		ID:             s.ID,
 		Name:           s.Name,
 		Type:           string(s.Type),
-		Status:         "running",
+		Status:         s.Status(),
 		CreatedAt:      s.CreatedAt.UTC().Format(time.RFC3339),
 		LastActivityAt: s.Terminal.LastActivity().Format(time.RFC3339),
 	}

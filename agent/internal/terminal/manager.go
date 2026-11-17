@@ -6,6 +6,7 @@ import (
 	"errors"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -29,6 +30,49 @@ type Session struct {
 	Type      SessionType
 	CreatedAt time.Time
 	Terminal  *Terminal
+	// Output holds recent output for replay. A goroutine started by the
+	// Manager is the only reader of the terminal: clients read Output.
+	Output *OutputBuffer
+
+	attached     atomic.Bool
+	everAttached atomic.Bool
+}
+
+// TryAttach marks the session as having an active client. It fails if another
+// client is already attached (one connection per session).
+func (s *Session) TryAttach() bool {
+	if s.attached.CompareAndSwap(false, true) {
+		s.everAttached.Store(true)
+		return true
+	}
+	return false
+}
+
+// Detach marks the session as having no client. The process keeps running.
+func (s *Session) Detach() { s.attached.Store(false) }
+
+// Status is "disconnected" once a client has attached and left, "running"
+// otherwise.
+func (s *Session) Status() string {
+	if s.everAttached.Load() && !s.attached.Load() {
+		return "disconnected"
+	}
+	return "running"
+}
+
+// pump copies terminal output into the replay buffer until the PTY closes.
+func (s *Session) pump() {
+	defer s.Output.Close()
+	buf := make([]byte, 32<<10)
+	for {
+		n, err := s.Terminal.Read(buf)
+		if n > 0 {
+			s.Output.Append(buf[:n])
+		}
+		if err != nil {
+			return
+		}
+	}
 }
 
 // CreateOptions describes a new session.
@@ -45,6 +89,15 @@ type Manager struct {
 	sessions map[string]*Session
 	pending  int // sessions being started, counted against the limit
 	max      int // 0 means unlimited
+
+	outputBytes int // output buffer size per session; 0 means the default
+}
+
+// SetOutputBufferBytes sets the output retained per new session.
+func (m *Manager) SetOutputBufferBytes(n int) {
+	m.mu.Lock()
+	m.outputBytes = n
+	m.mu.Unlock()
 }
 
 // NewManager creates a manager allowing at most maxSessions active sessions
@@ -89,9 +142,11 @@ func (m *Manager) Create(opts CreateOptions) (*Session, error) {
 		m.mu.Unlock()
 		return nil, err
 	}
-	s := &Session{ID: id, Name: opts.Name, Type: opts.Type, CreatedAt: time.Now().UTC(), Terminal: t}
+	s := &Session{ID: id, Name: opts.Name, Type: opts.Type, CreatedAt: time.Now().UTC(), Terminal: t,
+		Output: NewOutputBuffer(m.outputBytes)}
 	m.sessions[id] = s
 	m.mu.Unlock()
+	go s.pump()
 
 	go func() {
 		<-t.Done()

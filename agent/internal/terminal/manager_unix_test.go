@@ -15,7 +15,7 @@ func newTestSession(t *testing.T, m *Manager, name string) (*Session, *collector
 	if err != nil {
 		t.Fatalf("create %s: %v", name, err)
 	}
-	return s, collect(s.Terminal)
+	return s, collectSession(s)
 }
 
 // The echoed input contains "$((", the evaluated output does not, so matching

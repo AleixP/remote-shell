@@ -76,6 +76,10 @@ type testServer struct {
 func startServer(t *testing.T) *testServer { return startServerMax(t, 8) }
 
 func startServerMax(t *testing.T, maxSessions int) *testServer {
+	return startServerOpts(t, maxSessions, 0)
+}
+
+func startServerOpts(t *testing.T, maxSessions int, ticketTTL time.Duration) *testServer {
 	t.Helper()
 	dir := t.TempDir()
 	certFile, keyFile := writeCert(t, dir, 1, []string{"localhost"}, time.Now().Add(time.Hour))
@@ -88,7 +92,7 @@ func startServerMax(t *testing.T, maxSessions int) *testServer {
 	sessions := terminal.NewManager(maxSessions)
 	t.Cleanup(sessions.CloseAll)
 	srv, err := New(Options{Listen: "127.0.0.1", Port: 8443, TLSCertFile: certFile, TLSKeyFile: keyFile,
-		Auth: authSvc, Sessions: sessions, Shells: terminal.DetectShells(), Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+		Auth: authSvc, Sessions: sessions, Shells: terminal.DetectShells(), TicketTTL: ticketTTL, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
 	if err != nil {
 		t.Fatal(err)
 	}

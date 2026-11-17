@@ -11,17 +11,20 @@ func decodeJSON(r *http.Request, v any) bool {
 
 // Error codes shared with docs/WEBSOCKET_PROTOCOL.md.
 const (
-	codeInvalidRequest  = "INVALID_REQUEST"
-	codeUnauthorized    = "UNAUTHORIZED"
-	codeDeviceRevoked   = "DEVICE_REVOKED"
-	codePairingExpired  = "PAIRING_EXPIRED"
-	codeDeviceNotFound  = "DEVICE_NOT_FOUND"
-	codeSessionNotFound = "SESSION_NOT_FOUND"
-	codeShellNotAvail   = "SHELL_NOT_AVAILABLE"
-	codeSessionLimit    = "SESSION_LIMIT_REACHED"
-	codeTerminalError   = "TERMINAL_ERROR"
-	codeNotFound        = "NOT_FOUND"
-	codeInternal        = "INTERNAL_ERROR"
+	codeInvalidRequest   = "INVALID_REQUEST"
+	codeUnauthorized     = "UNAUTHORIZED"
+	codeDeviceRevoked    = "DEVICE_REVOKED"
+	codePairingExpired   = "PAIRING_EXPIRED"
+	codeDeviceNotFound   = "DEVICE_NOT_FOUND"
+	codeSessionNotFound  = "SESSION_NOT_FOUND"
+	codeShellNotAvail    = "SHELL_NOT_AVAILABLE"
+	codeSessionLimit     = "SESSION_LIMIT_REACHED"
+	codeTerminalError    = "TERMINAL_ERROR"
+	codeInvalidTicket    = "INVALID_TICKET"
+	codeTicketExpired    = "TICKET_EXPIRED"
+	codeAlreadyConnected = "SESSION_ALREADY_CONNECTED"
+	codeNotFound         = "NOT_FOUND"
+	codeInternal         = "INTERNAL_ERROR"
 )
 
 type errorBody struct {
