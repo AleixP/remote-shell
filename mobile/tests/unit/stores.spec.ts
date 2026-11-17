@@ -180,6 +180,16 @@ describe('computers store', () => {
     expect(store.status['dev_1']).toBe('revoked');
   });
 
+  test('a computer whose token is missing needs to be paired again', async () => {
+    useAgent(fakeAgent({ 'POST /pair': pairOk }));
+    const store = useComputersStore();
+    await store.pair(info);
+    await secure.remove('token_dev_1'); // e.g. credentials lost
+    const fresh = restart();
+    await fresh.load();
+    expect(await fresh.checkStatus('dev_1')).toBe('revoked');
+  });
+
   test('ignores corrupt or unsafe stored data', async () => {
     useAgent(fakeAgent({}));
     await prefs.set(

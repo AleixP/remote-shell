@@ -129,7 +129,10 @@ export const useComputersStore = defineStore('computers', () => {
       await (await apiFor(id)).listSessions();
       result = 'online';
     } catch (err) {
-      result = err instanceof AgentError && err.code === 'DEVICE_REVOKED' ? 'revoked' : 'offline';
+      // No valid credential (revoked, or the token is missing) means the phone
+      // must be paired again; anything else is a connectivity problem.
+      const noAccess = err instanceof AgentError && (err.code === 'DEVICE_REVOKED' || err.code === 'UNAUTHORIZED');
+      result = noAccess ? 'revoked' : 'offline';
     }
     status.value[id] = result;
     return result;

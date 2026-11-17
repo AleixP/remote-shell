@@ -11,6 +11,11 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  optimizeDeps: {
+    // Imported dynamically, so Vite would otherwise re-optimize (and reload the
+    // page) the first time they are needed.
+    include: ['@capacitor/app', '@capacitor/barcode-scanner', '@capacitor/device', '@capacitor/preferences'],
+  },
   test: {
     globals: true,
     environment: 'jsdom',
