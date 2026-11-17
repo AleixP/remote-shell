@@ -1,0 +1,126 @@
+package server
+
+import (
+	"errors"
+	"net/http"
+	"time"
+	"unicode"
+	"unicode/utf8"
+
+	"github.com/AleixP/remote-shell/agent/internal/terminal"
+)
+
+const maxSessionNameLen = 64
+
+type sessionJSON struct {
+	ID             string `json:"id"`
+	Name           string `json:"name"`
+	Type           string `json:"type"`
+	Status         string `json:"status"`
+	CreatedAt      string `json:"created_at"`
+	LastActivityAt string `json:"last_activity_at"`
+}
+
+func toSessionJSON(s *terminal.Session) sessionJSON {
+	return sessionJSON{
+		ID:             s.ID,
+		Name:           s.Name,
+		Type:           string(s.Type),
+		Status:         "running",
+		CreatedAt:      s.CreatedAt.UTC().Format(time.RFC3339),
+		LastActivityAt: s.Terminal.LastActivity().Format(time.RFC3339),
+	}
+}
+
+func validDisplayName(name string) bool {
+	if utf8.RuneCountInString(name) > maxSessionNameLen {
+		return false
+	}
+	for _, r := range name {
+		if unicode.IsControl(r) {
+			return false
+		}
+	}
+	return true
+}
+
+func (s *Server) handleListSessions(w http.ResponseWriter, _ *http.Request) {
+	list := s.sessions.List()
+	out := make([]sessionJSON, len(list))
+	for i, sess := range list {
+		out[i] = toSessionJSON(sess)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"sessions": out})
+}
+
+func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name  string `json:"name"`
+		Type  string `json:"type"`
+		Shell string `json:"shell"`
+		Cols  int    `json:"cols"`
+		Rows  int    `json:"rows"`
+	}
+	if !decodeJSON(r, &req) {
+		writeError(w, http.StatusBadRequest, codeInvalidRequest, "Invalid request data.")
+		return
+	}
+	typ := terminal.SessionType(req.Type)
+	if typ != terminal.Persistent && typ != terminal.Temporary {
+		writeError(w, http.StatusUnprocessableEntity, codeInvalidRequest, "type must be \"persistent\" or \"temporary\".")
+		return
+	}
+	if !validDisplayName(req.Name) {
+		writeError(w, http.StatusUnprocessableEntity, codeInvalidRequest, "Invalid session name.")
+		return
+	}
+	if req.Cols < 0 || req.Rows < 0 || req.Cols > terminal.MaxCols || req.Rows > terminal.MaxRows {
+		writeError(w, http.StatusUnprocessableEntity, codeInvalidRequest, "Invalid terminal dimensions.")
+		return
+	}
+	// Clients pick an allowlisted shell identifier, never a path.
+	shellName, shellPath, err := s.shells.Resolve(req.Shell)
+	if err != nil {
+		writeError(w, http.StatusUnprocessableEntity, codeShellNotAvail, "The requested shell is not available.")
+		return
+	}
+	name := req.Name
+	if name == "" {
+		name = shellName
+	}
+
+	sess, err := s.sessions.Create(terminal.CreateOptions{
+		Name:    name,
+		Type:    typ,
+		Options: terminal.Options{Shell: shellPath, Cols: req.Cols, Rows: req.Rows},
+	})
+	switch {
+	case err == nil:
+		s.log.Info("session created", "session_id", sess.ID, "type", sess.Type, "by", deviceFrom(r.Context()).ID)
+		writeJSON(w, http.StatusCreated, map[string]any{"session": toSessionJSON(sess)})
+	case errors.Is(err, terminal.ErrTooManySessions):
+		writeError(w, http.StatusConflict, codeSessionLimit, "The maximum number of sessions has been reached.")
+	default:
+		s.log.Error("create session failed", "error", err)
+		writeError(w, http.StatusInternalServerError, codeTerminalError, "The terminal could not be started.")
+	}
+}
+
+func (s *Server) handleGetSession(w http.ResponseWriter, r *http.Request) {
+	sess, err := s.sessions.Get(r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusNotFound, codeSessionNotFound, "The requested session does not exist.")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"session": toSessionJSON(sess)})
+}
+
+func (s *Server) handleCloseSession(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if err := s.sessions.Close(id); err != nil {
+		writeError(w, http.StatusNotFound, codeSessionNotFound, "The requested session does not exist.")
+		return
+	}
+	s.log.Info("session closed", "session_id", id, "by", deviceFrom(r.Context()).ID)
+	writeJSON(w, http.StatusOK, map[string]bool{"success": true})
+}

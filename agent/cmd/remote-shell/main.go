@@ -52,12 +52,28 @@ func runAgent(args []string) int {
 	defer db.Close()
 	authSvc := auth.New(db)
 
+	shells := terminal.DetectShells()
+	if cfg.DefaultShell != "" {
+		if err := shells.SetDefault(cfg.DefaultShell); err != nil {
+			log.Error("invalid -shell", "error", err)
+			return 1
+		}
+	}
+	if shells.Default() == "" {
+		log.Error("no usable shell found; use -shell")
+		return 1
+	}
+	sessions := terminal.NewManager(cfg.MaxSessions)
+	defer sessions.CloseAll()
+
 	srv, err := server.New(server.Options{
 		Listen:      cfg.Listen,
 		Port:        cfg.Port,
 		TLSCertFile: cfg.TLSCertFile,
 		TLSKeyFile:  cfg.TLSKeyFile,
 		Auth:        authSvc,
+		Sessions:    sessions,
+		Shells:      shells,
 		Logger:      log,
 	})
 	if err != nil {
@@ -79,9 +95,7 @@ func runAgent(args []string) int {
 		return 1
 	}
 
-	sessions := terminal.NewManager()
-	defer sessions.CloseAll()
-	log.Info("agent started")
+	log.Info("agent started", "shells", shells.Names(), "default_shell", shells.Default())
 
 	// Run both servers; if either fails, stop the other.
 	ctx, cancel := context.WithCancel(ctx)

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/AleixP/remote-shell/agent/internal/auth"
+	"github.com/AleixP/remote-shell/agent/internal/terminal"
 )
 
 // Version is the agent version reported by /api/v1/health.
@@ -30,25 +31,29 @@ type Options struct {
 	TLSCertFile string
 	TLSKeyFile  string
 
-	Auth   *auth.Service
-	Logger *slog.Logger
+	Auth     *auth.Service
+	Sessions *terminal.Manager
+	Shells   *terminal.Shells
+	Logger   *slog.Logger
 }
 
 // Server is the agent's HTTPS server.
 type Server struct {
-	addr  string
-	port  int
-	certs *certReloader
-	auth  *auth.Service
-	log   *slog.Logger
-	http  *http.Server
+	addr     string
+	port     int
+	certs    *certReloader
+	auth     *auth.Service
+	sessions *terminal.Manager
+	shells   *terminal.Shells
+	log      *slog.Logger
+	http     *http.Server
 }
 
 // New validates the options and prepares the server. It fails if the listen
 // address is not private or the TLS certificate cannot be used.
 func New(opts Options) (*Server, error) {
-	if opts.Auth == nil {
-		return nil, errors.New("server: auth service is required")
+	if opts.Auth == nil || opts.Sessions == nil || opts.Shells == nil {
+		return nil, errors.New("server: auth service, session manager and shells are required")
 	}
 	addr, err := ResolveListenAddr(opts.Listen, opts.Port)
 	if err != nil {
@@ -63,7 +68,7 @@ func New(opts Options) (*Server, error) {
 		log = slog.Default()
 	}
 
-	s := &Server{addr: addr, port: opts.Port, certs: certs, auth: opts.Auth, log: log}
+	s := &Server{addr: addr, port: opts.Port, certs: certs, auth: opts.Auth, sessions: opts.Sessions, shells: opts.Shells, log: log}
 	s.http = &http.Server{
 		Handler:           s.handler(),
 		TLSConfig:         certs.tlsConfig(),
@@ -93,6 +98,10 @@ func (s *Server) handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/pair", s.handlePair)
 	mux.Handle("GET /api/v1/devices", s.requireAuth(s.handleListDevices))
 	mux.Handle("DELETE /api/v1/devices/{id}", s.requireAuth(s.handleRevokeDevice))
+	mux.Handle("GET /api/v1/sessions", s.requireAuth(s.handleListSessions))
+	mux.Handle("POST /api/v1/sessions", s.requireAuth(s.handleCreateSession))
+	mux.Handle("GET /api/v1/sessions/{id}", s.requireAuth(s.handleGetSession))
+	mux.Handle("DELETE /api/v1/sessions/{id}", s.requireAuth(s.handleCloseSession))
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, http.StatusNotFound, codeNotFound, "The requested resource does not exist.")
 	})

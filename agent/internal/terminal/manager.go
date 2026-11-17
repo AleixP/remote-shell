@@ -9,7 +9,10 @@ import (
 	"time"
 )
 
-var ErrSessionNotFound = errors.New("terminal: session not found")
+var (
+	ErrSessionNotFound = errors.New("terminal: session not found")
+	ErrTooManySessions = errors.New("terminal: session limit reached")
+)
 
 // SessionType is the lifecycle policy of a session.
 type SessionType string
@@ -40,10 +43,18 @@ type CreateOptions struct {
 type Manager struct {
 	mu       sync.RWMutex
 	sessions map[string]*Session
+	pending  int // sessions being started, counted against the limit
+	max      int // 0 means unlimited
 }
 
-func NewManager() *Manager {
-	return &Manager{sessions: make(map[string]*Session)}
+// NewManager creates a manager allowing at most maxSessions active sessions
+// (0 means unlimited).
+func NewManager(maxSessions ...int) *Manager {
+	m := &Manager{sessions: make(map[string]*Session)}
+	if len(maxSessions) > 0 {
+		m.max = maxSessions[0]
+	}
+	return m
 }
 
 func newID() (string, error) {
@@ -63,13 +74,22 @@ func (m *Manager) Create(opts CreateOptions) (*Session, error) {
 	if err != nil {
 		return nil, err
 	}
+	m.mu.Lock()
+	if m.max > 0 && len(m.sessions)+m.pending >= m.max {
+		m.mu.Unlock()
+		return nil, ErrTooManySessions
+	}
+	m.pending++
+	m.mu.Unlock()
+
 	t, err := Start(opts.Options)
+	m.mu.Lock()
+	m.pending--
 	if err != nil {
+		m.mu.Unlock()
 		return nil, err
 	}
 	s := &Session{ID: id, Name: opts.Name, Type: opts.Type, CreatedAt: time.Now().UTC(), Terminal: t}
-
-	m.mu.Lock()
 	m.sessions[id] = s
 	m.mu.Unlock()
 

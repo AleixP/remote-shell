@@ -9,6 +9,8 @@ import (
 	"os/exec"
 	"runtime"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	pty "github.com/aymanbagabas/go-pty"
 )
@@ -35,6 +37,8 @@ type Terminal struct {
 	pty  pty.Pty
 	cmd  *pty.Cmd
 	done chan struct{}
+
+	lastActivity atomic.Int64 // unix nanoseconds of the last input or output
 
 	mu       sync.Mutex
 	exitCode int
@@ -94,6 +98,7 @@ func Start(opts Options) (*Terminal, error) {
 	}
 
 	t := &Terminal{pty: p, cmd: cmd, done: make(chan struct{})}
+	t.touch()
 	go t.wait()
 	return t, nil
 }
@@ -111,11 +116,25 @@ func (t *Terminal) wait() {
 	close(t.done)
 }
 
+func (t *Terminal) touch() { t.lastActivity.Store(time.Now().UnixNano()) }
+
+// LastActivity returns the time of the last input or output.
+func (t *Terminal) LastActivity() time.Time { return time.Unix(0, t.lastActivity.Load()).UTC() }
+
 // Read reads terminal output. It returns an error once the PTY is closed.
-func (t *Terminal) Read(b []byte) (int, error) { return t.pty.Read(b) }
+func (t *Terminal) Read(b []byte) (int, error) {
+	n, err := t.pty.Read(b)
+	if n > 0 {
+		t.touch()
+	}
+	return n, err
+}
 
 // Write sends input to the shell.
-func (t *Terminal) Write(b []byte) (int, error) { return t.pty.Write(b) }
+func (t *Terminal) Write(b []byte) (int, error) {
+	t.touch()
+	return t.pty.Write(b)
+}
 
 // Resize changes the terminal dimensions.
 func (t *Terminal) Resize(cols, rows int) error {

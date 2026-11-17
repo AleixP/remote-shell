@@ -32,6 +32,9 @@ type Config struct {
 
 	// PairingTTL is how long a pairing code stays valid.
 	PairingTTL time.Duration
+
+	// MaxSessions is the maximum number of simultaneously active sessions.
+	MaxSessions int
 }
 
 // DefaultDataDir returns the default agent data directory.
@@ -59,6 +62,7 @@ func Load(args []string, out io.Writer) (Config, error) {
 	fs.StringVar(&cfg.TLSKeyFile, "tls-key", "", "path to the TLS private key (required)")
 	fs.StringVar(&cfg.DataDir, "data-dir", "", "directory for the agent database (default: the user's config directory)")
 	fs.DurationVar(&cfg.PairingTTL, "pairing-ttl", 5*time.Minute, "validity of pairing codes (30s to 1h)")
+	fs.IntVar(&cfg.MaxSessions, "max-sessions", 16, "maximum number of active terminal sessions")
 	fs.StringVar(&level, "log-level", "info", "log level: debug, info, warn, error")
 	if err := fs.Parse(args); err != nil {
 		return Config{}, err
@@ -76,6 +80,9 @@ func Load(args []string, out io.Writer) (Config, error) {
 	}
 	if cfg.TLSCertFile == "" || cfg.TLSKeyFile == "" {
 		return Config{}, fmt.Errorf("-tls-cert and -tls-key are required")
+	}
+	if cfg.MaxSessions < 1 || cfg.MaxSessions > 256 {
+		return Config{}, fmt.Errorf("-max-sessions must be between 1 and 256")
 	}
 	if cfg.PairingTTL < 30*time.Second || cfg.PairingTTL > time.Hour {
 		return Config{}, fmt.Errorf("-pairing-ttl must be between 30s and 1h")

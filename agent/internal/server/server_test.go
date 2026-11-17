@@ -22,6 +22,7 @@ import (
 
 	"github.com/AleixP/remote-shell/agent/internal/auth"
 	"github.com/AleixP/remote-shell/agent/internal/storage"
+	"github.com/AleixP/remote-shell/agent/internal/terminal"
 )
 
 // writeCert writes a self-signed certificate and key into dir and returns
@@ -61,6 +62,7 @@ func writeCert(t *testing.T, dir string, serial int64, dns []string, notAfter ti
 }
 
 type testServer struct {
+	sessions *terminal.Manager
 	auth     *auth.Service
 	srv      *Server
 	url      string
@@ -71,7 +73,9 @@ type testServer struct {
 	done     chan error
 }
 
-func startServer(t *testing.T) *testServer {
+func startServer(t *testing.T) *testServer { return startServerMax(t, 8) }
+
+func startServerMax(t *testing.T, maxSessions int) *testServer {
 	t.Helper()
 	dir := t.TempDir()
 	certFile, keyFile := writeCert(t, dir, 1, []string{"localhost"}, time.Now().Add(time.Hour))
@@ -81,8 +85,10 @@ func startServer(t *testing.T) *testServer {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	authSvc := auth.New(db)
+	sessions := terminal.NewManager(maxSessions)
+	t.Cleanup(sessions.CloseAll)
 	srv, err := New(Options{Listen: "127.0.0.1", Port: 8443, TLSCertFile: certFile, TLSKeyFile: keyFile,
-		Auth: authSvc, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+		Auth: authSvc, Sessions: sessions, Shells: terminal.DetectShells(), Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +97,7 @@ func startServer(t *testing.T) *testServer {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	ts := &testServer{auth: authSvc, srv: srv, certFile: certFile, keyFile: keyFile, dir: dir, cancel: cancel, done: make(chan error, 1)}
+	ts := &testServer{sessions: sessions, auth: authSvc, srv: srv, certFile: certFile, keyFile: keyFile, dir: dir, cancel: cancel, done: make(chan error, 1)}
 	go func() { ts.done <- srv.Serve(ctx, ln) }()
 	ts.url = "https://" + ln.Addr().String()
 	t.Cleanup(func() { cancel() })
@@ -142,7 +148,8 @@ func TestNewRejectsBadCertificates(t *testing.T) {
 	defer db.Close()
 	authSvc := auth.New(db)
 	opts := func(c, k string) Options {
-		return Options{Listen: "127.0.0.1", Port: 8443, TLSCertFile: c, TLSKeyFile: k, Auth: authSvc}
+		return Options{Listen: "127.0.0.1", Port: 8443, TLSCertFile: c, TLSKeyFile: k, Auth: authSvc,
+			Sessions: terminal.NewManager(), Shells: terminal.DetectShells()}
 	}
 
 	if _, err := New(opts(filepath.Join(dir, "no.crt"), filepath.Join(dir, "no.key"))); err == nil {
@@ -156,7 +163,9 @@ func TestNewRejectsBadCertificates(t *testing.T) {
 	if _, err := New(opts(c, k)); err == nil {
 		t.Error("certificate without DNS names accepted")
 	}
-	if _, err := New(Options{Listen: "0.0.0.0", Port: 8443, TLSCertFile: c, TLSKeyFile: k, Auth: authSvc}); err == nil {
+	wild := opts(c, k)
+	wild.Listen = "0.0.0.0"
+	if _, err := New(wild); err == nil {
 		t.Error("wildcard listen address accepted")
 	}
 }

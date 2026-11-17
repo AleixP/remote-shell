@@ -135,3 +135,19 @@ func TestStartUnknownShell(t *testing.T) {
 		t.Fatal("expected error for unknown shell")
 	}
 }
+
+func TestSessionLimit(t *testing.T) {
+	m := NewManager(2)
+	defer m.CloseAll()
+	newTestSession(t, m, "1")
+	s2, _ := newTestSession(t, m, "2")
+	if _, err := m.Create(CreateOptions{Options: Options{Shell: "/bin/sh"}}); err != ErrTooManySessions {
+		t.Fatalf("third session = %v, want ErrTooManySessions", err)
+	}
+	if err := m.Close(s2.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Create(CreateOptions{Options: Options{Shell: "/bin/sh"}}); err != nil {
+		t.Fatalf("session after freeing a slot: %v", err)
+	}
+}
