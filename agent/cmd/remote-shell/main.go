@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"github.com/AleixP/remote-shell/agent/internal/config"
+	"github.com/AleixP/remote-shell/agent/internal/server"
 	"github.com/AleixP/remote-shell/agent/internal/terminal"
 )
 
@@ -25,12 +26,26 @@ func run() int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	srv, err := server.New(server.Options{
+		Listen:      cfg.Listen,
+		Port:        cfg.Port,
+		TLSCertFile: cfg.TLSCertFile,
+		TLSKeyFile:  cfg.TLSKeyFile,
+		Logger:      log,
+	})
+	if err != nil {
+		log.Error("cannot start agent", "error", err)
+		return 1
+	}
+
 	sessions := terminal.NewManager()
+	defer sessions.CloseAll()
 	log.Info("agent started")
 
-	<-ctx.Done()
-	log.Info("shutting down")
-	sessions.CloseAll()
+	if err := srv.Run(ctx); err != nil {
+		log.Error("server failed", "error", err)
+		return 1
+	}
 	log.Info("agent stopped")
 	return 0
 }
