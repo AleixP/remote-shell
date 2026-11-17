@@ -29,7 +29,7 @@ func (ts *testServer) newSession(t *testing.T, token string) string {
 	t.Helper()
 	defaultShellAvailable(t)
 	var created sessionResp
-	if resp := ts.call(t, "POST", "/api/v1/sessions", token, `{"type":"persistent"}`, &created); resp.StatusCode != 201 {
+	if resp := ts.call(t, "POST", "/api/v1/sessions", token, `{"type":"persistent"`+testShellField+`}`, &created); resp.StatusCode != 201 {
 		t.Fatalf("create session = %d", resp.StatusCode)
 	}
 	return created.Session.ID
@@ -329,15 +329,20 @@ func TestReconnectReplaysOnlyMissedOutput(t *testing.T) {
 
 func TestResumeReportsLostOutput(t *testing.T) {
 	ts := startServer(t)
-	ts.sessions.SetOutputBufferBytes(1024)
+	const bufferBytes = 512
+	ts.sessions.SetOutputBufferBytes(bufferBytes)
 	tok := ts.pair(t, "phone").AccessToken
 	id := ts.newSession(t, tok)
 
 	w1 := ts.dial(t, tok, id)
 	w1.resume(0)
-	// Produce more output than the buffer holds, reading as it arrives so
-	// the live connection itself never falls behind.
-	for i := 1; i <= 15; i++ {
+	// Produce several times more output than the buffer holds, reading it as
+	// it arrives so the live connection itself never falls behind. How much
+	// output a command makes depends on the shell, so loop on the byte count.
+	for i := 1; w1.out.Len() < 8*bufferBytes; i++ {
+		if i > 300 {
+			t.Fatalf("only %d bytes of output after %d commands", w1.out.Len(), i)
+		}
 		w1.sendInput(calcInput)
 		for strings.Count(w1.out.String(), calcWant) < i {
 			if err := w1.next(); err != nil {

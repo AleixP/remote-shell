@@ -177,7 +177,7 @@ func TestLogsNeverContainSecrets(t *testing.T) {
 	}
 	for name, secret := range map[string]string{
 		"pairing code": code, "access token": pr.AccessToken, "bad token": "bad-access-token",
-		"bad code": "BADCODEBADCODE", "ticket": tk, "terminal output": calcWant, "terminal input": "echo WS",
+		"bad code": "BADCODEBADCODE", "ticket": tk, "terminal output": calcWant, "terminal input": calcInputMarker,
 	} {
 		if strings.Contains(out, secret) {
 			t.Errorf("logs contain the %s", name)
