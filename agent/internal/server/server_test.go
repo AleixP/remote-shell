@@ -19,6 +19,9 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/AleixP/remote-shell/agent/internal/auth"
+	"github.com/AleixP/remote-shell/agent/internal/storage"
 )
 
 // writeCert writes a self-signed certificate and key into dir and returns
@@ -58,6 +61,7 @@ func writeCert(t *testing.T, dir string, serial int64, dns []string, notAfter ti
 }
 
 type testServer struct {
+	auth     *auth.Service
 	srv      *Server
 	url      string
 	certFile string
@@ -71,8 +75,14 @@ func startServer(t *testing.T) *testServer {
 	t.Helper()
 	dir := t.TempDir()
 	certFile, keyFile := writeCert(t, dir, 1, []string{"localhost"}, time.Now().Add(time.Hour))
+	db, err := storage.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	authSvc := auth.New(db)
 	srv, err := New(Options{Listen: "127.0.0.1", Port: 8443, TLSCertFile: certFile, TLSKeyFile: keyFile,
-		Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+		Auth: authSvc, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +91,7 @@ func startServer(t *testing.T) *testServer {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	ts := &testServer{srv: srv, certFile: certFile, keyFile: keyFile, dir: dir, cancel: cancel, done: make(chan error, 1)}
+	ts := &testServer{auth: authSvc, srv: srv, certFile: certFile, keyFile: keyFile, dir: dir, cancel: cancel, done: make(chan error, 1)}
 	go func() { ts.done <- srv.Serve(ctx, ln) }()
 	ts.url = "https://" + ln.Addr().String()
 	t.Cleanup(func() { cancel() })
@@ -125,8 +135,14 @@ func TestResolveListenAddr(t *testing.T) {
 
 func TestNewRejectsBadCertificates(t *testing.T) {
 	dir := t.TempDir()
+	db, err := storage.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	authSvc := auth.New(db)
 	opts := func(c, k string) Options {
-		return Options{Listen: "127.0.0.1", Port: 8443, TLSCertFile: c, TLSKeyFile: k}
+		return Options{Listen: "127.0.0.1", Port: 8443, TLSCertFile: c, TLSKeyFile: k, Auth: authSvc}
 	}
 
 	if _, err := New(opts(filepath.Join(dir, "no.crt"), filepath.Join(dir, "no.key"))); err == nil {
@@ -140,7 +156,7 @@ func TestNewRejectsBadCertificates(t *testing.T) {
 	if _, err := New(opts(c, k)); err == nil {
 		t.Error("certificate without DNS names accepted")
 	}
-	if _, err := New(Options{Listen: "0.0.0.0", Port: 8443, TLSCertFile: c, TLSKeyFile: k}); err == nil {
+	if _, err := New(Options{Listen: "0.0.0.0", Port: 8443, TLSCertFile: c, TLSKeyFile: k, Auth: authSvc}); err == nil {
 		t.Error("wildcard listen address accepted")
 	}
 }

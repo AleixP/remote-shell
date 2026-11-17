@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/AleixP/remote-shell/agent/internal/terminal"
@@ -23,6 +25,9 @@ type Config struct {
 	Port        int
 	TLSCertFile string
 	TLSKeyFile  string
+
+	// DataDir holds the agent database.
+	DataDir string
 }
 
 // Load parses command-line arguments (without the program name).
@@ -39,6 +44,7 @@ func Load(args []string, out io.Writer) (Config, error) {
 	fs.IntVar(&cfg.Port, "port", 8443, "HTTPS port")
 	fs.StringVar(&cfg.TLSCertFile, "tls-cert", "", "path to the TLS certificate (required)")
 	fs.StringVar(&cfg.TLSKeyFile, "tls-key", "", "path to the TLS private key (required)")
+	fs.StringVar(&cfg.DataDir, "data-dir", "", "directory for the agent database (default: the user's config directory)")
 	fs.StringVar(&level, "log-level", "info", "log level: debug, info, warn, error")
 	if err := fs.Parse(args); err != nil {
 		return Config{}, err
@@ -56,6 +62,13 @@ func Load(args []string, out io.Writer) (Config, error) {
 	}
 	if cfg.TLSCertFile == "" || cfg.TLSKeyFile == "" {
 		return Config{}, fmt.Errorf("-tls-cert and -tls-key are required")
+	}
+	if cfg.DataDir == "" {
+		base, err := os.UserConfigDir()
+		if err != nil {
+			return Config{}, fmt.Errorf("cannot determine data directory, use -data-dir: %w", err)
+		}
+		cfg.DataDir = filepath.Join(base, "remote-shell")
 	}
 	return cfg, nil
 }

@@ -8,6 +8,8 @@ import (
 	"net"
 	"net/http"
 	"time"
+
+	"github.com/AleixP/remote-shell/agent/internal/auth"
 )
 
 // Version is the agent version reported by /api/v1/health.
@@ -27,12 +29,14 @@ type Options struct {
 	TLSCertFile string
 	TLSKeyFile  string
 
+	Auth   *auth.Service
 	Logger *slog.Logger
 }
 
 // Server is the agent's HTTPS server.
 type Server struct {
 	addr string
+	auth *auth.Service
 	log  *slog.Logger
 	http *http.Server
 }
@@ -40,6 +44,9 @@ type Server struct {
 // New validates the options and prepares the server. It fails if the listen
 // address is not private or the TLS certificate cannot be used.
 func New(opts Options) (*Server, error) {
+	if opts.Auth == nil {
+		return nil, errors.New("server: auth service is required")
+	}
 	addr, err := ResolveListenAddr(opts.Listen, opts.Port)
 	if err != nil {
 		return nil, err
@@ -53,7 +60,7 @@ func New(opts Options) (*Server, error) {
 		log = slog.Default()
 	}
 
-	s := &Server{addr: addr, log: log}
+	s := &Server{addr: addr, auth: opts.Auth, log: log}
 	s.http = &http.Server{
 		Handler:           s.handler(),
 		TLSConfig:         certs.tlsConfig(),
@@ -70,10 +77,20 @@ func (s *Server) Addr() string { return s.addr }
 func (s *Server) handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/health", s.handleHealth)
+	mux.HandleFunc("POST /api/v1/pair", s.handlePair)
+	mux.Handle("GET /api/v1/devices", s.requireAuth(s.handleListDevices))
+	mux.Handle("DELETE /api/v1/devices/{id}", s.requireAuth(s.handleRevokeDevice))
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, http.StatusNotFound, codeNotFound, "The requested resource does not exist.")
 	})
-	return s.recoverPanics(limitBody(mux))
+	return s.recoverPanics(noStore(limitBody(mux)))
+}
+
+func noStore(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		next.ServeHTTP(w, r)
+	})
 }
 
 func limitBody(next http.Handler) http.Handler {

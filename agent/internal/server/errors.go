@@ -5,9 +5,17 @@ import (
 	"net/http"
 )
 
+func decodeJSON(r *http.Request, v any) bool {
+	return json.NewDecoder(r.Body).Decode(v) == nil
+}
+
 // Error codes shared with docs/WEBSOCKET_PROTOCOL.md.
 const (
 	codeInvalidRequest = "INVALID_REQUEST"
+	codeUnauthorized   = "UNAUTHORIZED"
+	codeDeviceRevoked  = "DEVICE_REVOKED"
+	codePairingExpired = "PAIRING_EXPIRED"
+	codeDeviceNotFound = "DEVICE_NOT_FOUND"
 	codeNotFound       = "NOT_FOUND"
 	codeInternal       = "INTERNAL_ERROR"
 )
