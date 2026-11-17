@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/AleixP/remote-shell/agent/internal/auth"
@@ -35,10 +36,12 @@ type Options struct {
 
 // Server is the agent's HTTPS server.
 type Server struct {
-	addr string
-	auth *auth.Service
-	log  *slog.Logger
-	http *http.Server
+	addr  string
+	port  int
+	certs *certReloader
+	auth  *auth.Service
+	log   *slog.Logger
+	http  *http.Server
 }
 
 // New validates the options and prepares the server. It fails if the listen
@@ -60,7 +63,7 @@ func New(opts Options) (*Server, error) {
 		log = slog.Default()
 	}
 
-	s := &Server{addr: addr, auth: opts.Auth, log: log}
+	s := &Server{addr: addr, port: opts.Port, certs: certs, auth: opts.Auth, log: log}
 	s.http = &http.Server{
 		Handler:           s.handler(),
 		TLSConfig:         certs.tlsConfig(),
@@ -69,6 +72,16 @@ func New(opts Options) (*Server, error) {
 		MaxHeaderBytes:    16 << 10,
 	}
 	return s, nil
+}
+
+// Host returns the host:port clients use to reach the agent: the first DNS name
+// of the TLS certificate (the MagicDNS name) and the configured port.
+func (s *Server) Host() string {
+	cert, err := s.certs.load()
+	if err != nil || len(cert.Leaf.DNSNames) == 0 {
+		return s.addr
+	}
+	return net.JoinHostPort(cert.Leaf.DNSNames[0], strconv.Itoa(s.port))
 }
 
 // Addr returns the address the server listens on.

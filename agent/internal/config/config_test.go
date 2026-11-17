@@ -30,6 +30,8 @@ func TestLoadInvalid(t *testing.T) {
 		{"-rows", "100000"},
 		{"-unknown"},
 		{"-port", "0"},
+		{"-pairing-ttl", "1s"},
+		{"-pairing-ttl", "2h"},
 	} {
 		args = tlsArgs(args...)
 		if _, err := Load(args, io.Discard); err == nil {
