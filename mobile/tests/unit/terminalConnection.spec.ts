@@ -295,6 +295,29 @@ describe('TerminalConnection', () => {
     expect(states.at(-1)).toBe('ready');
   });
 
+  test('reconnectNow replaces a possibly dead socket immediately and resumes', async () => {
+    const { conn, sockets, outputs } = setup();
+    conn.start();
+    await flush();
+    sockets[0].json({ type: 'session.ready' });
+    sockets[0].output(1, 'a');
+
+    conn.reconnectNow();
+    await flush();
+    expect(sockets[0].closed).toBe(true);
+    expect(sockets).toHaveLength(2); // no waiting for a backoff delay
+    sockets[1].json({ type: 'session.ready' });
+    expect(sockets[1].controlSent()[0]).toEqual({ type: 'session.resume', last_output_sequence: 1 });
+    sockets[0].output(2, 'stale'); // the old socket is ignored
+    sockets[1].output(2, 'b');
+    expect(outputs).toEqual(['a', 'b']);
+
+    conn.close();
+    conn.reconnectNow();
+    await flush();
+    expect(sockets).toHaveLength(2); // a closed connection stays closed
+  });
+
   test('ignores events from a replaced socket', async () => {
     const { conn, sockets, outputs } = setup();
     conn.start();

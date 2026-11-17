@@ -105,6 +105,23 @@ export class TerminalConnection {
     }
   }
 
+  /**
+   * Drops the current socket and reconnects right away. Used when the app
+   * returns to the foreground: the OS may have killed the socket silently.
+   */
+  reconnectNow(): void {
+    if (this.stopped) return;
+    this.clearTimer();
+    const socket = this.socket;
+    this.socket = null;
+    if (socket) {
+      socket.onclose = null;
+      socket.close(1000);
+    }
+    this.attempt = 0;
+    void this.connect();
+  }
+
   /** Disconnects without ending the session (persistent sessions keep running). */
   close(): void {
     this.stopped = true;
