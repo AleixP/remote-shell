@@ -80,6 +80,11 @@ func startServerMax(t *testing.T, maxSessions int) *testServer {
 }
 
 func startServerOpts(t *testing.T, maxSessions int, ticketTTL time.Duration) *testServer {
+	return startServerWith(t, maxSessions, func(o *Options) { o.TicketTTL = ticketTTL })
+}
+
+// startServerWith starts a server with generous limits; mutate can change any option.
+func startServerWith(t *testing.T, maxSessions int, mutate func(*Options)) *testServer {
 	t.Helper()
 	dir := t.TempDir()
 	certFile, keyFile := writeCert(t, dir, 1, []string{"localhost"}, time.Now().Add(time.Hour))
@@ -91,8 +96,14 @@ func startServerOpts(t *testing.T, maxSessions int, ticketTTL time.Duration) *te
 	authSvc := auth.New(db)
 	sessions := terminal.NewManager(maxSessions)
 	t.Cleanup(sessions.CloseAll)
-	srv, err := New(Options{Listen: "127.0.0.1", Port: 8443, TLSCertFile: certFile, TLSKeyFile: keyFile,
-		Auth: authSvc, Sessions: sessions, Shells: terminal.DetectShells(), TicketTTL: ticketTTL, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	opts := Options{Listen: "127.0.0.1", Port: 8443, TLSCertFile: certFile, TLSKeyFile: keyFile,
+		Auth: authSvc, Sessions: sessions, Shells: terminal.DetectShells(),
+		AuthMaxFailures: 1000, OpsPerMinute: 6000,
+		Logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	if mutate != nil {
+		mutate(&opts)
+	}
+	srv, err := New(opts)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -35,6 +35,14 @@ type Config struct {
 
 	// MaxSessions is the maximum number of simultaneously active sessions.
 	MaxSessions int
+
+	// Abuse protection (see docs/SECURITY.md §10).
+	AuthMaxFailures int
+	AuthLockout     time.Duration
+	OpsPerMinute    int
+
+	// OutputBufferKB bounds the output retained per session for reconnection.
+	OutputBufferKB int
 }
 
 // DefaultDataDir returns the default agent data directory.
@@ -63,6 +71,10 @@ func Load(args []string, out io.Writer) (Config, error) {
 	fs.StringVar(&cfg.DataDir, "data-dir", "", "directory for the agent database (default: the user's config directory)")
 	fs.DurationVar(&cfg.PairingTTL, "pairing-ttl", 5*time.Minute, "validity of pairing codes (30s to 1h)")
 	fs.IntVar(&cfg.MaxSessions, "max-sessions", 16, "maximum number of active terminal sessions")
+	fs.IntVar(&cfg.AuthMaxFailures, "auth-max-failures", 10, "failed authentications per minute that lock a client out")
+	fs.DurationVar(&cfg.AuthLockout, "auth-lockout", 5*time.Minute, "how long a client stays locked out")
+	fs.IntVar(&cfg.OpsPerMinute, "ops-per-minute", 30, "rate limit for ticket requests, session creation and terminal connections")
+	fs.IntVar(&cfg.OutputBufferKB, "output-buffer-kb", 1024, "output kept per session for reconnection, in KiB")
 	fs.StringVar(&level, "log-level", "info", "log level: debug, info, warn, error")
 	if err := fs.Parse(args); err != nil {
 		return Config{}, err
@@ -83,6 +95,12 @@ func Load(args []string, out io.Writer) (Config, error) {
 	}
 	if cfg.MaxSessions < 1 || cfg.MaxSessions > 256 {
 		return Config{}, fmt.Errorf("-max-sessions must be between 1 and 256")
+	}
+	if cfg.AuthMaxFailures < 1 || cfg.OpsPerMinute < 1 || cfg.AuthLockout < time.Second {
+		return Config{}, fmt.Errorf("-auth-max-failures and -ops-per-minute must be positive, -auth-lockout at least 1s")
+	}
+	if cfg.OutputBufferKB < 16 || cfg.OutputBufferKB > 64*1024 {
+		return Config{}, fmt.Errorf("-output-buffer-kb must be between 16 and 65536")
 	}
 	if cfg.PairingTTL < 30*time.Second || cfg.PairingTTL > time.Hour {
 		return Config{}, fmt.Errorf("-pairing-ttl must be between 30s and 1h")

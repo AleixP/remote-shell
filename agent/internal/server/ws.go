@@ -71,6 +71,9 @@ func (r *connRegistry) closeDevice(deviceID string) {
 }
 
 func (s *Server) handleConnectionTicket(w http.ResponseWriter, r *http.Request) {
+	if !s.allowOp(w, s.ticketLimit, deviceFrom(r.Context()).ID) {
+		return
+	}
 	id := r.PathValue("id")
 	if _, err := s.sessions.Get(id); err != nil {
 		writeError(w, http.StatusNotFound, codeSessionNotFound, "The requested session does not exist.")
@@ -119,7 +122,14 @@ func (w *wsConn) sendOutput(f terminal.Frame) error {
 // ticket is validated before the upgrade.
 func (s *Server) handleTerminal(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	ip := clientIP(r)
+	if s.authBlocked(w, r) || !s.allowOp(w, s.connectLimit, ip) {
+		return
+	}
 	deviceID, res := s.tickets.Consume(r.URL.Query().Get("ticket"), id)
+	if res != ticket.OK {
+		s.authFails.Fail(ip)
+	}
 	switch res {
 	case ticket.Expired:
 		writeError(w, http.StatusGone, codeTicketExpired, "The connection ticket has expired.")

@@ -39,7 +39,12 @@ func runAgent(args []string) int {
 	if err != nil {
 		return 2
 	}
-	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: cfg.LogLevel}))
+	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: cfg.LogLevel, ReplaceAttr: redact}))
+
+	if isElevated() {
+		log.Error("refusing to run with administrator/root privileges; start the agent as a normal user")
+		return 1
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -64,17 +69,21 @@ func runAgent(args []string) int {
 		return 1
 	}
 	sessions := terminal.NewManager(cfg.MaxSessions)
+	sessions.SetOutputBufferBytes(cfg.OutputBufferKB << 10)
 	defer sessions.CloseAll()
 
 	srv, err := server.New(server.Options{
-		Listen:      cfg.Listen,
-		Port:        cfg.Port,
-		TLSCertFile: cfg.TLSCertFile,
-		TLSKeyFile:  cfg.TLSKeyFile,
-		Auth:        authSvc,
-		Sessions:    sessions,
-		Shells:      shells,
-		Logger:      log,
+		Listen:          cfg.Listen,
+		Port:            cfg.Port,
+		TLSCertFile:     cfg.TLSCertFile,
+		TLSKeyFile:      cfg.TLSKeyFile,
+		Auth:            authSvc,
+		AuthMaxFailures: cfg.AuthMaxFailures,
+		AuthLockout:     cfg.AuthLockout,
+		OpsPerMinute:    cfg.OpsPerMinute,
+		Sessions:        sessions,
+		Shells:          shells,
+		Logger:          log,
 	})
 	if err != nil {
 		log.Error("cannot start agent", "error", err)

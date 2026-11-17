@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -469,4 +470,36 @@ func mustSession(t *testing.T, ts *testServer, id string) *terminal.Session {
 		t.Fatal(err)
 	}
 	return s
+}
+
+func itoa(n int) string { return strconv.Itoa(n) }
+
+func TestSimultaneousConnectionsAreIsolated(t *testing.T) {
+	ts := startServer(t)
+	tok := ts.pair(t, "phone").AccessToken
+
+	const n = 3
+	var clients [n]*wsClient
+	for i := range clients {
+		clients[i] = ts.dial(t, tok, ts.newSession(t, tok))
+		clients[i].resume(0)
+	}
+	for i, w := range clients {
+		in, _ := calcN(i)
+		w.sendInput(in)
+	}
+	for i, w := range clients {
+		_, want := calcN(i)
+		w.waitOutput(want)
+	}
+	for i, w := range clients {
+		for j := range clients {
+			if i == j {
+				continue
+			}
+			if _, other := calcN(j); strings.Contains(w.out.String(), other) {
+				t.Errorf("connection %d received output of connection %d", i, j)
+			}
+		}
+	}
 }

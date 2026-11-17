@@ -54,6 +54,9 @@ func (s *Server) handleListSessions(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
+	if !s.allowOp(w, s.sessionLimit, deviceFrom(r.Context()).ID) {
+		return
+	}
 	var req struct {
 		Name  string `json:"name"`
 		Type  string `json:"type"`

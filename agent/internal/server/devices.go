@@ -29,13 +29,18 @@ func bearerToken(r *http.Request) string {
 // requireAuth rejects requests without a valid, non-revoked device token.
 func (s *Server) requireAuth(next http.HandlerFunc) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.authBlocked(w, r) {
+			return
+		}
 		dev, err := s.auth.Authenticate(bearerToken(r))
 		switch {
 		case err == nil:
 			next(w, r.WithContext(context.WithValue(r.Context(), deviceCtxKey{}, dev)))
 		case errors.Is(err, auth.ErrRevoked):
+			s.authFails.Fail(clientIP(r))
 			writeError(w, http.StatusUnauthorized, codeDeviceRevoked, "Device authorization revoked.")
 		case errors.Is(err, auth.ErrUnauthorized):
+			s.authFails.Fail(clientIP(r))
 			writeError(w, http.StatusUnauthorized, codeUnauthorized, "Authentication required.")
 		default:
 			s.log.Error("authentication failed", "error", err)
@@ -45,6 +50,15 @@ func (s *Server) requireAuth(next http.HandlerFunc) http.Handler {
 }
 
 func (s *Server) handlePair(w http.ResponseWriter, r *http.Request) {
+	ip := clientIP(r)
+	if blocked, wait := s.pairFails.Blocked(ip); blocked {
+		writeRateLimited(w, wait)
+		return
+	}
+	if blocked, wait := s.pairFailsAll.Blocked("*"); blocked {
+		writeRateLimited(w, wait)
+		return
+	}
 	var req struct {
 		PairingCode string `json:"pairing_code"`
 		DeviceName  string `json:"device_name"`
@@ -65,6 +79,8 @@ func (s *Server) handlePair(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, auth.ErrInvalidName):
 		writeError(w, http.StatusUnprocessableEntity, codeInvalidRequest, "Invalid device name.")
 	case errors.Is(err, auth.ErrInvalidPairing):
+		s.pairFails.Fail(ip)
+		s.pairFailsAll.Fail("*")
 		s.log.Warn("pairing failed")
 		writeError(w, http.StatusUnauthorized, codePairingExpired, "The pairing code is invalid or has expired.")
 	default:

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/AleixP/remote-shell/agent/internal/auth"
+	"github.com/AleixP/remote-shell/agent/internal/ratelimit"
 	"github.com/AleixP/remote-shell/agent/internal/terminal"
 	"github.com/AleixP/remote-shell/agent/internal/ticket"
 )
@@ -19,7 +20,7 @@ import (
 const Version = "0.1.0"
 
 const (
-	maxBodyBytes    = 1 << 20
+	maxBodyBytes    = 64 << 10
 	shutdownTimeout = 5 * time.Second
 )
 
@@ -38,7 +39,16 @@ type Options struct {
 	// TicketTTL is how long a WebSocket connection ticket stays valid
 	// (default 60s).
 	TicketTTL time.Duration
-	Logger    *slog.Logger
+
+	// AuthMaxFailures failed authentications or pairings from one client
+	// within a minute lock it out for AuthLockout (defaults: 10 and 5m).
+	AuthMaxFailures int
+	AuthLockout     time.Duration
+	// OpsPerMinute bounds ticket requests, session creation and WebSocket
+	// connection attempts per device or client (default 30).
+	OpsPerMinute int
+
+	Logger *slog.Logger
 }
 
 // Server is the agent's HTTPS server.
@@ -51,8 +61,15 @@ type Server struct {
 	shells   *terminal.Shells
 	tickets  *ticket.Store
 	conns    *connRegistry
-	log      *slog.Logger
-	http     *http.Server
+
+	authFails    *ratelimit.Lockout // failed auth/ticket attempts per client IP
+	pairFails    *ratelimit.Lockout // failed pairings per client IP
+	pairFailsAll *ratelimit.Lockout // failed pairings from anyone
+	ticketLimit  *ratelimit.Bucket  // per device
+	sessionLimit *ratelimit.Bucket  // per device
+	connectLimit *ratelimit.Bucket  // per client IP
+	log          *slog.Logger
+	http         *http.Server
 }
 
 // New validates the options and prepares the server. It fails if the listen
@@ -78,7 +95,28 @@ func New(opts Options) (*Server, error) {
 	if ttl <= 0 {
 		ttl = 60 * time.Second
 	}
-	s := &Server{tickets: ticket.NewStore(ttl), conns: newConnRegistry(), addr: addr, port: opts.Port, certs: certs, auth: opts.Auth, sessions: opts.Sessions, shells: opts.Shells, log: log}
+	maxFails, lockout, ops := opts.AuthMaxFailures, opts.AuthLockout, opts.OpsPerMinute
+	if maxFails <= 0 {
+		maxFails = defaultAuthMaxFailures
+	}
+	if lockout <= 0 {
+		lockout = defaultAuthLockout
+	}
+	if ops <= 0 {
+		ops = defaultOpsPerMinute
+	}
+	rate, burst := float64(ops)/60, max(ops/3, 3)
+	s := &Server{
+		authFails:    ratelimit.NewLockout(maxFails, failureWindow, lockout),
+		pairFails:    ratelimit.NewLockout(maxFails, failureWindow, lockout),
+		pairFailsAll: ratelimit.NewLockout(globalPairingFailures, failureWindow, lockout),
+		ticketLimit:  ratelimit.NewBucket(rate, burst),
+		sessionLimit: ratelimit.NewBucket(rate, burst),
+		connectLimit: ratelimit.NewBucket(rate, burst),
+	}
+	s.tickets, s.conns = ticket.NewStore(ttl), newConnRegistry()
+	s.addr, s.port, s.certs, s.auth = addr, opts.Port, certs, opts.Auth
+	s.sessions, s.shells, s.log = opts.Sessions, opts.Shells, log
 	// A revoked device loses its tickets and its open terminal connections.
 	opts.Auth.OnRevoke(func(deviceID string) {
 		s.tickets.RevokeDevice(deviceID)

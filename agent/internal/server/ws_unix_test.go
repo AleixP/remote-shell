@@ -9,3 +9,8 @@ const (
 	calcWant  = "WS42"
 	exitInput = "exit 3\n"
 )
+
+// calcN returns input printing a result unique to n, and that result.
+func calcN(n int) (input, want string) {
+	return "echo Q$((1000+" + itoa(n) + "))\n", "Q" + itoa(1000+n)
+}
