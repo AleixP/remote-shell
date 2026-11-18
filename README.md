@@ -1,4 +1,6 @@
-# Remote Shell
+<p align="center">
+  <img src="assets/banner.png" alt="Remote Shell" width="640">
+</p>
 
 Open a terminal on any of your computers from your phone. A small Go agent on each computer exposes real shells, and a mobile app (Ionic Vue + Capacitor, with xterm.js) connects to it over your private [Tailscale](https://tailscale.com) network. There is no central server, no account and no port forwarding: the agent only listens on its Tailscale address.
 
