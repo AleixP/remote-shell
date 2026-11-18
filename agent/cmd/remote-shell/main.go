@@ -31,6 +31,8 @@ func run(args []string) int {
 			return runPair(args[1:], os.Stdout, os.Stderr)
 		case "devices":
 			return runDevices(args[1:], os.Stdout, os.Stderr)
+		case "doctor":
+			return runDoctor(args[1:], os.Stdout, os.Stderr)
 		}
 	}
 	return runAgent(args)

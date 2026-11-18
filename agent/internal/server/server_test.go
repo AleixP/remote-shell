@@ -276,3 +276,43 @@ func TestGracefulShutdown(t *testing.T) {
 		t.Fatal("server did not shut down")
 	}
 }
+
+// An expired certificate left in place (a renewal that went wrong) must never
+// be served, and the agent must recover as soon as a valid one is back.
+func TestExpiredReplacementIsNotServedAndAgentRecovers(t *testing.T) {
+	ts := startServer(t)
+	addr := ts.url[len("https://"):]
+
+	handshake := func() (int64, error) {
+		conn, err := tls.Dial("tcp", addr, &tls.Config{InsecureSkipVerify: true})
+		if err != nil {
+			return 0, err
+		}
+		defer conn.Close()
+		return conn.ConnectionState().PeerCertificates[0].SerialNumber.Int64(), nil
+	}
+	touch := func() {
+		future := time.Now().Add(time.Minute)
+		for _, f := range []string{ts.certFile, ts.keyFile} {
+			if err := os.Chtimes(f, future, future); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+
+	if serial, err := handshake(); err != nil || serial != 1 {
+		t.Fatalf("initial handshake = %d, %v", serial, err)
+	}
+
+	writeCert(t, ts.dir, 2, []string{"localhost"}, time.Now().Add(-time.Hour)) // expired
+	touch()
+	if serial, err := handshake(); err == nil {
+		t.Fatalf("an expired certificate was served (serial %d)", serial)
+	}
+
+	writeCert(t, ts.dir, 3, []string{"localhost"}, time.Now().Add(48*time.Hour)) // renewed
+	touch()
+	if serial, err := handshake(); err != nil || serial != 3 {
+		t.Fatalf("handshake after renewal = %d, %v; want serial 3", serial, err)
+	}
+}
