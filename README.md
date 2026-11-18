@@ -213,4 +213,4 @@ The following capabilities are outside the initial scope:
 
 ## License
 
-License not yet specified\.
+This project is licensed under the MIT License\. See the [LICENSE](LICENSE) file for details\.
