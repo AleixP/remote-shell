@@ -22,8 +22,9 @@ func TestAbsolutizeArgsOnlyTouchesPathFlags(t *testing.T) {
 		t.Errorf("got  %v\nwant %v", got, want)
 	}
 	// Already absolute paths are kept, and a trailing flag without a value is left alone.
-	got, _ = absolutizeArgs([]string{"-tls-cert", "/abs/c.crt", "-log-file"})
-	if !reflect.DeepEqual(got, []string{"-tls-cert", "/abs/c.crt", "-log-file"}) {
+	abs := filepath.Join(wd, "abs", "c.crt")
+	got, _ = absolutizeArgs([]string{"-tls-cert", abs, "-log-file"})
+	if !reflect.DeepEqual(got, []string{"-tls-cert", abs, "-log-file"}) {
 		t.Errorf("got %v", got)
 	}
 }
@@ -67,7 +68,9 @@ func TestInstallWritesAbsolutePathsAndALogFile(t *testing.T) {
 	}
 	unit, _ := os.ReadFile(filepath.Join(m.Home, ".config", "systemd", "user", "remote-shell.service"))
 	wd, _ := os.Getwd()
-	for _, want := range []string{filepath.Join(wd, "c.crt"), filepath.Join(wd, "k.key"), "-log-file " + filepath.Join(data, "agent.log")} {
+	// The unit quotes and escapes paths (backslashes on Windows paths).
+	q := func(p string) string { return systemdQuoteForTest(p) }
+	for _, want := range []string{q(filepath.Join(wd, "c.crt")), q(filepath.Join(wd, "k.key")), "-log-file " + q(filepath.Join(data, "agent.log"))} {
 		if !strings.Contains(string(unit), want) {
 			t.Errorf("unit lacks %q:\n%s", want, unit)
 		}
@@ -143,4 +146,12 @@ func TestLogFileIsRotatedWhenItGrows(t *testing.T) {
 	if fi, _ := os.Stat(path); fi.Size() != 0 {
 		t.Errorf("the new log is not empty: %d", fi.Size())
 	}
+}
+
+// systemdQuoteForTest mirrors how the unit file writes one word.
+func systemdQuoteForTest(s string) string {
+	if !strings.ContainsAny(s, " \t\"'\\;$%") {
+		return s
+	}
+	return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`, `%`, `%%`, `$`, `$$`).Replace(s) + `"`
 }
