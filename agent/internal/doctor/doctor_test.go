@@ -138,6 +138,10 @@ func TestHealthySetupPassesEveryCheck(t *testing.T) {
 	p := newPKI(t, []string{host}, time.Now().Add(90*24*time.Hour))
 	rs := Run(context.Background(), options(t, p, tlsServer(t, p)))
 	for _, r := range rs {
+		// POSIX permissions are not checked on Windows: that is informational.
+		if r.Name == "File permissions" && runtime.GOOS == "windows" && r.Status == Info {
+			continue
+		}
 		if r.Status != OK {
 			t.Errorf("%s: %v %s", r.Name, r.Status, r.Detail)
 		}
