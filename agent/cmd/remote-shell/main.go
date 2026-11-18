@@ -90,12 +90,11 @@ func runAgent(args []string) int {
 		return 1
 	}
 
-	computerName, _ := os.Hostname()
 	ctl, err := control.NewServer(control.Options{
 		SocketPath:   filepath.Join(cfg.DataDir, control.SocketName),
 		Auth:         authSvc,
 		Host:         srv.Host,
-		ComputerName: computerName,
+		ComputerName: cfg.ComputerName,
 		PairingTTL:   cfg.PairingTTL,
 		Logger:       log,
 	})

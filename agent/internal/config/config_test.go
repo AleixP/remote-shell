@@ -3,6 +3,7 @@ package config
 import (
 	"io"
 	"log/slog"
+	"strings"
 	"testing"
 )
 
@@ -30,6 +31,8 @@ func TestLoadInvalid(t *testing.T) {
 		{"-rows", "100000"},
 		{"-unknown"},
 		{"-port", "0"},
+		{"-name", "bad\nname"},
+		{"-name", strings.Repeat("a", 65)},
 		{"-auth-max-failures", "0"},
 		{"-ops-per-minute", "0"},
 		{"-output-buffer-kb", "1"},
@@ -49,5 +52,16 @@ func TestLoadRequiresTLS(t *testing.T) {
 		if _, err := Load(args, io.Discard); err == nil {
 			t.Errorf("Load(%v) succeeded, want error", args)
 		}
+	}
+}
+
+func TestComputerName(t *testing.T) {
+	cfg, err := Load(tlsArgs("-name", "My Mac"), io.Discard)
+	if err != nil || cfg.ComputerName != "My Mac" {
+		t.Fatalf("explicit name = %q, %v", cfg.ComputerName, err)
+	}
+	cfg, err = Load(tlsArgs(), io.Discard)
+	if err != nil || cfg.ComputerName == "" || strings.HasSuffix(cfg.ComputerName, ".local") {
+		t.Fatalf("default name = %q, %v", cfg.ComputerName, err)
 	}
 }

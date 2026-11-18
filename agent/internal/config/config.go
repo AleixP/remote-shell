@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/AleixP/remote-shell/agent/internal/terminal"
 )
@@ -32,6 +34,9 @@ type Config struct {
 
 	// PairingTTL is how long a pairing code stays valid.
 	PairingTTL time.Duration
+
+	// ComputerName is the name shown in the mobile app for this computer.
+	ComputerName string
 
 	// MaxSessions is the maximum number of simultaneously active sessions.
 	MaxSessions int
@@ -69,6 +74,7 @@ func Load(args []string, out io.Writer) (Config, error) {
 	fs.StringVar(&cfg.TLSCertFile, "tls-cert", "", "path to the TLS certificate (required)")
 	fs.StringVar(&cfg.TLSKeyFile, "tls-key", "", "path to the TLS private key (required)")
 	fs.StringVar(&cfg.DataDir, "data-dir", "", "directory for the agent database (default: the user's config directory)")
+	fs.StringVar(&cfg.ComputerName, "name", "", "name shown in the mobile app (default: the computer's host name)")
 	fs.DurationVar(&cfg.PairingTTL, "pairing-ttl", 5*time.Minute, "validity of pairing codes (30s to 1h)")
 	fs.IntVar(&cfg.MaxSessions, "max-sessions", 16, "maximum number of active terminal sessions")
 	fs.IntVar(&cfg.AuthMaxFailures, "auth-max-failures", 10, "failed authentications per minute that lock a client out")
@@ -102,6 +108,16 @@ func Load(args []string, out io.Writer) (Config, error) {
 	if cfg.OutputBufferKB < 16 || cfg.OutputBufferKB > 64*1024 {
 		return Config{}, fmt.Errorf("-output-buffer-kb must be between 16 and 65536")
 	}
+	if cfg.ComputerName == "" {
+		cfg.ComputerName, _ = os.Hostname()
+		cfg.ComputerName = strings.TrimSuffix(cfg.ComputerName, ".local")
+	}
+	if cfg.ComputerName == "" {
+		cfg.ComputerName = "Computer"
+	}
+	if !validComputerName(cfg.ComputerName) {
+		return Config{}, fmt.Errorf("-name must be 1-64 characters without control characters")
+	}
 	if cfg.PairingTTL < 30*time.Second || cfg.PairingTTL > time.Hour {
 		return Config{}, fmt.Errorf("-pairing-ttl must be between 30s and 1h")
 	}
@@ -113,4 +129,16 @@ func Load(args []string, out io.Writer) (Config, error) {
 		cfg.DataDir = dir
 	}
 	return cfg, nil
+}
+
+func validComputerName(name string) bool {
+	if n := utf8.RuneCountInString(name); n < 1 || n > 64 {
+		return false
+	}
+	for _, r := range name {
+		if unicode.IsControl(r) {
+			return false
+		}
+	}
+	return true
 }
