@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -34,6 +36,8 @@ func run(args []string) int {
 			return runDevices(args[1:], os.Stdout, os.Stderr)
 		case "doctor":
 			return runDoctor(args[1:], os.Stdout, os.Stderr)
+		case "service":
+			return runService(args[1:], os.Stdout, os.Stderr, nil)
 		}
 	}
 	return runAgent(args)
@@ -44,7 +48,17 @@ func runAgent(args []string) int {
 	if err != nil {
 		return 2
 	}
-	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: cfg.LogLevel, ReplaceAttr: redact}))
+	var logOut io.Writer = os.Stderr
+	if cfg.LogFile != "" {
+		f, err := openLogFile(cfg.LogFile)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "cannot open log file:", err)
+			return 1
+		}
+		defer f.Close()
+		logOut = f
+	}
+	log := slog.New(slog.NewTextHandler(logOut, &slog.HandlerOptions{Level: cfg.LogLevel, ReplaceAttr: redact}))
 
 	if isElevated() {
 		log.Error("refusing to run with administrator/root privileges; start the agent as a normal user")

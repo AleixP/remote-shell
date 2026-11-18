@@ -42,6 +42,9 @@ type Config struct {
 	// SessionHistory is how long ended sessions stay listed in the app.
 	SessionHistory time.Duration
 
+	// LogFile, if set, receives the logs instead of standard error.
+	LogFile string
+
 	// ComputerName is the name shown in the mobile app for this computer.
 	ComputerName string
 
@@ -84,6 +87,7 @@ func Load(args []string, out io.Writer) (Config, error) {
 	fs.StringVar(&cfg.ComputerName, "name", "", "name shown in the mobile app (default: the computer's host name)")
 	fs.DurationVar(&cfg.TempSessionTTL, "temp-session-ttl", 30*time.Minute, "inactivity after which a temporary session with no client is closed (10s to 24h)")
 	fs.DurationVar(&cfg.SessionHistory, "session-history", 24*time.Hour, "how long ended sessions stay listed (1h to 720h)")
+	fs.StringVar(&cfg.LogFile, "log-file", "", "write logs to this file instead of standard error (rotated at 10 MiB when the agent starts)")
 	fs.DurationVar(&cfg.PairingTTL, "pairing-ttl", 5*time.Minute, "validity of pairing codes (30s to 1h)")
 	fs.IntVar(&cfg.MaxSessions, "max-sessions", 16, "maximum number of active terminal sessions")
 	fs.IntVar(&cfg.AuthMaxFailures, "auth-max-failures", 10, "failed authentications per minute that lock a client out")
