@@ -6,6 +6,11 @@
           <ion-back-button default-href="/computers" />
         </ion-buttons>
         <ion-title>{{ computer?.name ?? 'Computer' }}</ion-title>
+        <ion-buttons slot="end">
+          <ion-button aria-label="New terminal" @click="chooseType">
+            <ion-icon slot="icon-only" :icon="addOutline" />
+          </ion-button>
+        </ion-buttons>
       </ion-toolbar>
     </ion-header>
 
@@ -22,7 +27,8 @@
       <div v-else-if="loaded && sessions.length === 0" class="empty">
         <ion-icon :icon="terminalOutline" />
         <h2>No terminals</h2>
-        <p>Tap + to open a terminal on this computer.</p>
+        <p>Open a terminal on this computer.</p>
+        <ion-button @click="chooseType">New terminal</ion-button>
       </div>
 
       <ion-list v-else>
@@ -42,12 +48,6 @@
           </ion-item-options>
         </ion-item-sliding>
       </ion-list>
-
-      <ion-fab slot="fixed" vertical="bottom" horizontal="end">
-        <ion-fab-button aria-label="New terminal" @click="chooseType">
-          <ion-icon :icon="addOutline" />
-        </ion-fab-button>
-      </ion-fab>
     </ion-content>
   </ion-page>
 </template>
@@ -61,8 +61,6 @@ import {
   IonButton,
   IonButtons,
   IonContent,
-  IonFab,
-  IonFabButton,
   IonHeader,
   IonIcon,
   IonItem,
