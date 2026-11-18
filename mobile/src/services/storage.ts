@@ -31,26 +31,33 @@ export function createSecureStore(): KeyValueStore {
   if (!Capacitor.isNativePlatform()) {
     return new MemoryStore();
   }
-  let ready: Promise<typeof SecureStorage> | null = null;
-  const plugin = () => {
-    ready ??= import('@aparajita/capacitor-secure-storage').then(async ({ SecureStorage }) => {
-      await SecureStorage.setKeyPrefix('remoteshell_');
+  let configured: Promise<void> | null = null;
+
+  // Capacitor plugins are Proxies that look like thenables (every property,
+  // "then" included, exists). Returning one from a promise or async function
+  // makes JavaScript call its "then" and hang forever, so the plugin is only
+  // ever handed to a callback and only plain values leave this function.
+  async function withPlugin<T>(use: (plugin: typeof SecureStorage) => Promise<T>): Promise<T> {
+    const { SecureStorage: plugin } = await import('@aparajita/capacitor-secure-storage');
+    configured ??= (async () => {
+      await plugin.setKeyPrefix('remoteshell_');
       // Keep tokens on this device: no iCloud Keychain synchronization.
-      await SecureStorage.setSynchronize(false);
-      return SecureStorage;
-    });
-    return ready;
-  };
+      await plugin.setSynchronize(false);
+    })();
+    await configured;
+    return use(plugin);
+  }
+
   return {
     async get(key) {
-      const value = await (await plugin()).get(key, false, false);
+      const value = await withPlugin((p) => p.get(key, false, false));
       return typeof value === 'string' ? value : null;
     },
     async set(key, value) {
-      await (await plugin()).set(key, value, false, false);
+      await withPlugin((p) => p.set(key, value, false, false));
     },
     async remove(key) {
-      await (await plugin()).remove(key, false);
+      await withPlugin((p) => p.remove(key, false));
     },
   };
 }
