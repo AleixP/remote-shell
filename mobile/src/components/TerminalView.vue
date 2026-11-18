@@ -23,7 +23,9 @@
 <script setup lang="ts">
 import { FitAddon } from '@xterm/addon-fit';
 import { Terminal } from '@xterm/xterm';
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+
+import { Capacitor } from '@capacitor/core';
 
 import { TerminalConnection, type ConnectionState } from '@/services/terminalConnection';
 import { applyCtrl, arrowSequence, KEY_ESC, KEY_TAB, type Arrow } from '@/services/terminalKeys';
@@ -31,7 +33,15 @@ import { useComputersStore } from '@/stores/computers';
 
 import '@xterm/xterm/css/xterm.css';
 
-const props = defineProps<{ computerId: string; sessionId: string }>();
+const props = withDefaults(
+  defineProps<{
+    computerId: string;
+    sessionId: string;
+    /** Whether this terminal is the visible tab (hidden ones keep running). */
+    active?: boolean;
+  }>(),
+  { active: true },
+);
 const emit = defineEmits<{
   state: [state: ConnectionState];
   /** The shell process ended. */
@@ -50,7 +60,35 @@ const ctrl = ref(false);
 let term: Terminal | null = null;
 let connection: TerminalConnection | null = null;
 let observer: ResizeObserver | null = null;
+let fitAddon: FitAddon | null = null;
 let removeResumeListener: (() => void) | null = null;
+
+// A hidden (inactive) tab has no size, so it can only be fitted once shown.
+function fitIfVisible(): void {
+  if (host.value && host.value.offsetParent !== null) fitAddon?.fit();
+}
+
+watch(
+  () => props.active,
+  async (active) => {
+    if (!active) return;
+    await nextTick();
+    fitIfVisible();
+    term?.focus();
+  },
+);
+
+// iOS adds a bar with arrows and "Done" above the keyboard: hide it, the
+// terminal has its own key row.
+async function setIosAccessoryBar(visible: boolean): Promise<void> {
+  if (Capacitor.getPlatform() !== 'ios') return;
+  try {
+    const { Keyboard } = await import('@capacitor/keyboard');
+    await Keyboard.setAccessoryBarVisible({ isVisible: visible });
+  } catch {
+    // Not available: the default bar stays.
+  }
+}
 
 const stateLabel = computed(() =>
   state.value === 'reconnecting'
@@ -91,10 +129,12 @@ onMounted(async () => {
   const fit = new FitAddon();
   t.loadAddon(fit);
   t.open(host.value);
-  fit.fit();
+  fitIfVisible();
   term = t;
+  fitAddon = fit;
+  void setIosAccessoryBar(false);
 
-  observer = new ResizeObserver(() => fit.fit());
+  observer = new ResizeObserver(() => fitIfVisible());
   observer.observe(host.value);
 
   const api = await computers.apiFor(props.computerId);
@@ -125,7 +165,7 @@ onMounted(async () => {
   t.onResize(({ cols, rows }) => conn.resize(cols, rows));
   conn.resize(t.cols, t.rows);
   conn.start();
-  t.focus();
+  if (props.active) t.focus();
 
   // iOS may have killed the socket while the app was in the background.
   const { App } = await import('@capacitor/app');
@@ -138,6 +178,7 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  void setIosAccessoryBar(true);
   removeResumeListener?.();
   observer?.disconnect();
   // Leaving the screen disconnects; persistent sessions keep running.

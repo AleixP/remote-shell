@@ -6,6 +6,7 @@ import { getServices } from '@/services/container';
 import { AgentError } from '@/services/errors';
 import type { PairingInfo } from '@/services/pairing';
 import { withTimeout } from '@/services/timeout';
+import { useWorkspaceStore } from '@/stores/workspace';
 
 /** A paired computer. Its token lives in secure storage, never here. */
 export interface Computer {
@@ -129,6 +130,7 @@ export const useComputersStore = defineStore('computers', () => {
       }
     }
     await forget(id);
+    useWorkspaceStore().clear(id);
     await persist();
     return revoked;
   }

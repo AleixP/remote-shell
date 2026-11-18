@@ -54,7 +54,6 @@
 
 <script setup lang="ts">
 import {
-  actionSheetController,
   alertController,
   IonBackButton,
   IonBadge,
@@ -81,15 +80,18 @@ import { addOutline, terminalOutline } from 'ionicons/icons';
 import { computed, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
+import { useNewTerminal } from '@/composables/useNewTerminal';
 import { describeError } from '@/services/messages';
 import { useComputersStore } from '@/stores/computers';
 import { useSessionsStore } from '@/stores/sessions';
-import type { Session, SessionType } from '@/types/api';
+import { useWorkspaceStore } from '@/stores/workspace';
+import type { Session } from '@/types/api';
 
 const route = useRoute();
 const router = useRouter();
 const computers = useComputersStore();
 const sessionsStore = useSessionsStore();
+const workspace = useWorkspaceStore();
 
 const computerId = computed(() => String(route.params.computerId));
 const computer = computed(() => computers.computers.find((c) => c.id === computerId.value));
@@ -123,29 +125,16 @@ async function onRefresh(ev: CustomEvent): Promise<void> {
 }
 
 function open(sessionId: string): void {
+  workspace.open(computerId.value, sessionId);
   void router.push(`/computers/${computerId.value}/sessions/${sessionId}`);
 }
 
-async function chooseType(): Promise<void> {
-  const sheet = await actionSheetController.create({
-    header: 'New terminal',
-    buttons: [
-      { text: 'Persistent (keeps running when you leave)', handler: () => void create('persistent') },
-      { text: 'Temporary (ends after inactivity)', handler: () => void create('temporary') },
-      { text: 'Cancel', role: 'cancel' },
-    ],
-  });
-  await sheet.present();
-}
-
-async function create(type: SessionType): Promise<void> {
-  try {
-    const session = await sessionsStore.create(computerId.value, { type });
-    open(session.id);
-  } catch (err) {
-    error.value = describeError(err);
-  }
-}
+const { chooseType } = useNewTerminal(() => computerId.value, {
+  onCreated: (session) => open(session.id),
+  onError: (message) => {
+    error.value = message;
+  },
+});
 
 async function confirmEnd(s: Session): Promise<void> {
   const alert = await alertController.create({
@@ -157,9 +146,12 @@ async function confirmEnd(s: Session): Promise<void> {
         text: 'End',
         role: 'destructive',
         handler: () => {
-          void sessionsStore.close(computerId.value, s.id).catch((err) => {
-            error.value = describeError(err);
-          });
+          void sessionsStore
+            .close(computerId.value, s.id)
+            .then(() => workspace.close(computerId.value, s.id))
+            .catch((err) => {
+              error.value = describeError(err);
+            });
         },
       },
     ],
