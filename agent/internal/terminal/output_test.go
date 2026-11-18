@@ -95,3 +95,26 @@ func TestOutputWakeAndClose(t *testing.T) {
 	}
 	b.Close() // idempotent
 }
+
+func TestOutputBufferStaysBoundedUnderAHugeFlood(t *testing.T) {
+	const limit = 1 << 20
+	b := NewOutputBuffer(limit)
+	chunk := bytes.Repeat([]byte("x"), MaxFramePayload)
+	for i := 0; i < 200*(1<<20)/MaxFramePayload; i++ { // 200 MiB through a 1 MiB buffer
+		b.Append(chunk)
+	}
+	frames, truncated, _, _ := b.Snapshot(0)
+	var held int
+	for _, f := range frames {
+		held += len(f.Data)
+	}
+	if held > limit+MaxFramePayload {
+		t.Fatalf("buffer holds %d bytes, limit %d", held, limit)
+	}
+	if !truncated {
+		t.Error("a flood far beyond the limit must report truncation")
+	}
+	if want := uint64(200 * (1 << 20) / MaxFramePayload); b.LastSeq() != want {
+		t.Errorf("LastSeq = %d, want %d (sequence numbers keep counting)", b.LastSeq(), want)
+	}
+}

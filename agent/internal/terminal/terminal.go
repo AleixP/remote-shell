@@ -13,6 +13,8 @@ import (
 	"time"
 
 	pty "github.com/aymanbagabas/go-pty"
+
+	"github.com/AleixP/remote-shell/agent/internal/safego"
 )
 
 const (
@@ -102,7 +104,7 @@ func Start(opts Options) (*Terminal, error) {
 
 	t := &Terminal{pty: p, cmd: cmd, done: make(chan struct{}), cols: opts.Cols, rows: opts.Rows}
 	t.touch()
-	go t.wait()
+	safego.Go("terminal-wait", t.wait)
 	return t, nil
 }
 

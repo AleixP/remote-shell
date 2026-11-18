@@ -13,6 +13,7 @@ import (
 	"github.com/AleixP/remote-shell/agent/internal/auth"
 	"github.com/AleixP/remote-shell/agent/internal/config"
 	"github.com/AleixP/remote-shell/agent/internal/control"
+	"github.com/AleixP/remote-shell/agent/internal/safego"
 	"github.com/AleixP/remote-shell/agent/internal/server"
 	"github.com/AleixP/remote-shell/agent/internal/sessionlog"
 	"github.com/AleixP/remote-shell/agent/internal/storage"
@@ -123,8 +124,8 @@ func runAgent(args []string) int {
 	// Run both servers; if either fails, stop the other.
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	go sessions.RunJanitor(ctx, cfg.TempSessionTTL, 30*time.Second)
-	go purgeHistory(ctx, db, cfg.SessionHistory, log)
+	safego.Go("session-janitor", func() { sessions.RunJanitor(ctx, cfg.TempSessionTTL, 30*time.Second) })
+	safego.Go("history-purge", func() { purgeHistory(ctx, db, cfg.SessionHistory, log) })
 	var wg sync.WaitGroup
 	var failed bool
 	var mu sync.Mutex

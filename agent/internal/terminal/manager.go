@@ -10,6 +10,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/AleixP/remote-shell/agent/internal/safego"
 )
 
 var (
@@ -222,9 +224,9 @@ func (m *Manager) Create(opts CreateOptions) (*Session, error) {
 	m.sessions[id] = s
 	m.mu.Unlock()
 	m.recorder().Started(SessionInfo{ID: id, Name: s.Name, Type: s.Type, Shell: filepath.Base(opts.Shell), CreatedAt: s.CreatedAt})
-	go s.pump()
+	safego.Go("session-pump", s.pump)
 
-	go func() {
+	safego.Go("session-watch", func() {
 		<-t.Done()
 		stillListed := m.remove(id)
 		_ = t.Close()
@@ -232,7 +234,7 @@ func (m *Manager) Create(opts CreateOptions) (*Session, error) {
 		if stillListed {
 			m.recorder().Ended(id, EndedExited, t.ExitCode())
 		}
-	}()
+	})
 	return s, nil
 }
 

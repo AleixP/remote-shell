@@ -75,6 +75,9 @@ func TestPairFlow(t *testing.T) {
 	if resp.Header.Get("Cache-Control") != "no-store" {
 		t.Error("responses must not be cacheable")
 	}
+	if resp.Header.Get("X-Content-Type-Options") != "nosniff" {
+		t.Error("responses must not be content-sniffed")
+	}
 }
 
 func TestPairErrors(t *testing.T) {

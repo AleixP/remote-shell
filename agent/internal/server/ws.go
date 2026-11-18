@@ -10,6 +10,7 @@ import (
 
 	"github.com/coder/websocket"
 
+	"github.com/AleixP/remote-shell/agent/internal/safego"
 	"github.com/AleixP/remote-shell/agent/internal/terminal"
 	"github.com/AleixP/remote-shell/agent/internal/ticket"
 )
@@ -197,8 +198,8 @@ func (s *Server) serveTerminal(ctx context.Context, cancel context.CancelFunc, w
 	}
 
 	resume := make(chan uint64, 1)
-	go s.readLoop(ctx, cancel, ws, sess, resume)
-	go keepAlive(ctx, cancel, ws.c)
+	safego.Go("ws-read", func() { s.readLoop(ctx, cancel, ws, sess, resume) })
+	safego.Go("ws-keepalive", func() { keepAlive(ctx, cancel, ws.c) })
 
 	var from uint64
 	select {
