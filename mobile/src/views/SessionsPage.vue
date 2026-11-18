@@ -33,18 +33,22 @@
 
       <ion-list v-else>
         <ion-item-sliding v-for="s in sessions" :key="s.id">
-          <ion-item button detail @click="open(s.id)">
+          <ion-item button :detail="!hasEnded(s)" :class="{ ended: hasEnded(s) }" @click="onTap(s)">
             <ion-icon slot="start" :icon="terminalOutline" />
             <ion-label>
               <h2>{{ s.name }}</h2>
-              <p>{{ s.type === 'persistent' ? 'Persistent' : 'Temporary' }}</p>
+              <p>
+                {{ s.type === 'persistent' ? 'Persistent' : 'Temporary' }}
+                <template v-if="hasEnded(s)"> · {{ describeSessionEnd(s) }}</template>
+              </p>
             </ion-label>
             <ion-badge slot="end" :color="s.status === 'running' ? 'success' : 'medium'">
               {{ s.status }}
             </ion-badge>
           </ion-item>
           <ion-item-options side="end">
-            <ion-item-option color="danger" @click="confirmEnd(s)">End</ion-item-option>
+            <ion-item-option v-if="hasEnded(s)" color="medium" @click="dismiss(s)"> Remove </ion-item-option>
+            <ion-item-option v-else color="danger" @click="confirmEnd(s)">End</ion-item-option>
           </ion-item-options>
         </ion-item-sliding>
       </ion-list>
@@ -75,13 +79,14 @@ import {
   IonTitle,
   IonToolbar,
   onIonViewWillEnter,
+  toastController,
 } from '@ionic/vue';
 import { addOutline, terminalOutline } from 'ionicons/icons';
 import { computed, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import { useNewTerminal } from '@/composables/useNewTerminal';
-import { describeError } from '@/services/messages';
+import { describeError, describeSessionEnd, hasEnded } from '@/services/messages';
 import { useComputersStore } from '@/stores/computers';
 import { useSessionsStore } from '@/stores/sessions';
 import { useWorkspaceStore } from '@/stores/workspace';
@@ -95,7 +100,11 @@ const workspace = useWorkspaceStore();
 
 const computerId = computed(() => String(route.params.computerId));
 const computer = computed(() => computers.computers.find((c) => c.id === computerId.value));
-const sessions = computed(() => sessionsStore.byComputer[computerId.value] ?? []);
+// Running sessions first, then the ones that have ended.
+const sessions = computed(() => {
+  const all = sessionsStore.byComputer[computerId.value] ?? [];
+  return [...all.filter((x) => !hasEnded(x)), ...all.filter(hasEnded)];
+});
 const loaded = ref(false);
 const error = ref('');
 
@@ -122,6 +131,28 @@ onIonViewWillEnter(async () => {
 async function onRefresh(ev: CustomEvent): Promise<void> {
   await refresh();
   (ev.target as HTMLIonRefresherElement).complete();
+}
+
+function onTap(s: Session): void {
+  if (hasEnded(s)) {
+    void toast(`"${s.name}" has ended. ${describeSessionEnd(s)}. Swipe it to remove it.`);
+    return;
+  }
+  open(s.id);
+}
+
+async function toast(message: string): Promise<void> {
+  await (await toastController.create({ message, duration: 3500, position: 'top' })).present();
+}
+
+// An ended session has nothing to terminate: removing it only clears the list.
+function dismiss(s: Session): void {
+  void sessionsStore
+    .close(computerId.value, s.id)
+    .then(() => workspace.close(computerId.value, s.id))
+    .catch((err) => {
+      error.value = describeError(err);
+    });
 }
 
 function open(sessionId: string): void {
@@ -161,6 +192,9 @@ async function confirmEnd(s: Session): Promise<void> {
 </script>
 
 <style scoped>
+.ended {
+  opacity: 0.6;
+}
 .error {
   display: block;
   padding: 16px;

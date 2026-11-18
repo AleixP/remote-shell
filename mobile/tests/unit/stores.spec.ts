@@ -5,6 +5,7 @@ import { setServices } from '@/services/container';
 import { MemoryStore } from '@/services/storage';
 import { useComputersStore } from '@/stores/computers';
 import { useSessionsStore } from '@/stores/sessions';
+import { useWorkspaceStore } from '@/stores/workspace';
 
 const BASE = 'https://mac.ts.net:8443';
 const info = { baseUrl: BASE, host: 'mac.ts.net:8443', code: 'C'.repeat(26), name: 'My Mac' };
@@ -243,5 +244,29 @@ describe('sessions store', () => {
     expect(sessions.byComputer['dev_1']).toEqual([session]);
     await sessions.close('dev_1', 'ses_1');
     expect(sessions.byComputer['dev_1']).toEqual([]);
+  });
+
+  test('refreshing closes the tabs of sessions that ended or disappeared', async () => {
+    const running = { id: 'ses_run', name: 'a', type: 'persistent', status: 'running', created_at: '' };
+    const ended = {
+      id: 'ses_end',
+      name: 'b',
+      type: 'persistent',
+      status: 'exited',
+      created_at: '',
+      end_reason: 'agent_restarted',
+    };
+    useAgent(
+      fakeAgent({
+        'POST /pair': pairOk,
+        'GET /sessions': () => json(200, { sessions: [running, ended] }),
+      }),
+    );
+    await useComputersStore().pair(info);
+    const workspace = useWorkspaceStore();
+    ['ses_run', 'ses_end', 'ses_gone'].forEach((id) => workspace.open('dev_1', id));
+
+    await useSessionsStore().refresh('dev_1');
+    expect(workspace.list('dev_1')).toEqual(['ses_run']);
   });
 });

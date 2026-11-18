@@ -10,6 +10,10 @@ export interface Session {
   status: SessionStatus;
   created_at: string;
   last_activity_at?: string;
+  /** Only for sessions that have ended (status "exited" or "expired"). */
+  ended_at?: string;
+  end_reason?: 'process_exited' | 'idle_timeout' | 'agent_restarted';
+  exit_code?: number;
 }
 
 export interface CreateSessionRequest {

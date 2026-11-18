@@ -2,16 +2,24 @@ import { defineStore } from 'pinia';
 import { ref } from 'vue';
 
 import { useComputersStore } from './computers';
+import { useWorkspaceStore } from './workspace';
 
+import { hasEnded } from '@/services/messages';
 import type { CreateSessionRequest, Session } from '@/types/api';
 
 export const useSessionsStore = defineStore('sessions', () => {
   const byComputer = ref<Record<string, Session[]>>({});
   const computers = useComputersStore();
+  const workspace = useWorkspaceStore();
 
   async function refresh(computerId: string): Promise<Session[]> {
     const sessions = await (await computers.apiFor(computerId)).listSessions();
     byComputer.value[computerId] = sessions;
+    // A tab whose session ended (or vanished) has nothing left to show.
+    const running = new Set(sessions.filter((x) => !hasEnded(x)).map((x) => x.id));
+    for (const id of workspace.list(computerId)) {
+      if (!running.has(id)) workspace.close(computerId, id);
+    }
     return sessions;
   }
 

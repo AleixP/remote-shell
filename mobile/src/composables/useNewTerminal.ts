@@ -28,7 +28,7 @@ export function useNewTerminal(
       header: 'New terminal',
       buttons: [
         { text: 'Persistent (keeps running when you leave)', handler: () => void create('persistent') },
-        { text: 'Temporary (ends after inactivity)', handler: () => void create('temporary') },
+        { text: 'Temporary (closes itself after a while with no connection)', handler: () => void create('temporary') },
         { text: 'Cancel', role: 'cancel' },
       ],
     });

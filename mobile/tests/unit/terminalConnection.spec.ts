@@ -210,7 +210,11 @@ describe('TerminalConnection', () => {
   });
 
   test('gives up when the session is gone or the device was revoked', async () => {
-    for (const err of [new AgentError(404, 'SESSION_NOT_FOUND', 'x'), new AgentError(401, 'DEVICE_REVOKED', 'x')]) {
+    for (const err of [
+      new AgentError(404, 'SESSION_NOT_FOUND', 'x'),
+      new AgentError(410, 'SESSION_CLOSED', 'x'),
+      new AgentError(401, 'DEVICE_REVOKED', 'x'),
+    ]) {
       const { conn, sockets, events, states } = setup({ ticketError: () => err });
       conn.start();
       await vi.advanceTimersByTimeAsync(60_000);

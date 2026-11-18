@@ -178,7 +178,8 @@ export class TerminalConnection {
 
   private handleTicketError(err: unknown): void {
     if (err instanceof AgentError) {
-      const gone = err.status === 404 || err.code === 'DEVICE_REVOKED' || err.code === 'UNAUTHORIZED';
+      const gone =
+        err.status === 404 || err.status === 410 || err.code === 'DEVICE_REVOKED' || err.code === 'UNAUTHORIZED';
       if (gone) {
         this.fail(err);
         return;
