@@ -1,6 +1,7 @@
 package terminal
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
@@ -36,6 +37,7 @@ type Session struct {
 
 	attached     atomic.Bool
 	everAttached atomic.Bool
+	detachedAt   atomic.Int64 // unix nanoseconds of the last Detach; 0 if never
 }
 
 // TryAttach marks the session as having an active client. It fails if another
@@ -49,7 +51,26 @@ func (s *Session) TryAttach() bool {
 }
 
 // Detach marks the session as having no client. The process keeps running.
-func (s *Session) Detach() { s.attached.Store(false) }
+func (s *Session) Detach() {
+	s.detachedAt.Store(time.Now().UnixNano())
+	s.attached.Store(false)
+}
+
+// idleSince returns the moment from which a session with no client has been
+// inactive: the latest of its creation, last disconnection and last input or
+// output.
+func (s *Session) idleSince() time.Time {
+	t := s.CreatedAt
+	if d := s.detachedAt.Load(); d > 0 {
+		if dt := time.Unix(0, d); dt.After(t) {
+			t = dt
+		}
+	}
+	if a := s.Terminal.LastActivity(); a.After(t) {
+		t = a
+	}
+	return t
+}
 
 // Status is "disconnected" once a client has attached and left, "running"
 // otherwise.
@@ -208,5 +229,44 @@ func (m *Manager) CloseAll() {
 	m.mu.Unlock()
 	for _, s := range all {
 		_ = s.Terminal.Close()
+	}
+}
+
+// ExpireIdle closes temporary sessions that have had no client attached and no
+// input or output for at least ttl, and returns their IDs. Persistent
+// sessions and sessions with a client attached never expire.
+func (m *Manager) ExpireIdle(now time.Time, ttl time.Duration) []string {
+	m.mu.Lock()
+	var expired []*Session
+	for id, s := range m.sessions {
+		if s.Type != Temporary || s.attached.Load() {
+			continue
+		}
+		if now.Sub(s.idleSince()) >= ttl {
+			expired = append(expired, s)
+			delete(m.sessions, id)
+		}
+	}
+	m.mu.Unlock()
+
+	ids := make([]string, len(expired))
+	for i, s := range expired {
+		ids[i] = s.ID
+		_ = s.Terminal.Close()
+	}
+	return ids
+}
+
+// RunJanitor expires idle temporary sessions every interval until ctx is done.
+func (m *Manager) RunJanitor(ctx context.Context, ttl, interval time.Duration) {
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case now := <-t.C:
+			m.ExpireIdle(now, ttl)
+		}
 	}
 }

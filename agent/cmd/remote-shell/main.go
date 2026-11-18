@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/AleixP/remote-shell/agent/internal/auth"
 	"github.com/AleixP/remote-shell/agent/internal/config"
@@ -108,6 +109,7 @@ func runAgent(args []string) int {
 	// Run both servers; if either fails, stop the other.
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	go sessions.RunJanitor(ctx, cfg.TempSessionTTL, 30*time.Second)
 	var wg sync.WaitGroup
 	var failed bool
 	var mu sync.Mutex

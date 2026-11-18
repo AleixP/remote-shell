@@ -9,6 +9,8 @@ import (
 	"time"
 )
 
+const testShell = "/bin/sh"
+
 func newTestSession(t *testing.T, m *Manager, name string) (*Session, *collector) {
 	t.Helper()
 	s, err := m.Create(CreateOptions{Name: name, Options: Options{Shell: "/bin/sh"}})

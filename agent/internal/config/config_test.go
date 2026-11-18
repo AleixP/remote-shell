@@ -31,6 +31,8 @@ func TestLoadInvalid(t *testing.T) {
 		{"-rows", "100000"},
 		{"-unknown"},
 		{"-port", "0"},
+		{"-temp-session-ttl", "1s"},
+		{"-temp-session-ttl", "48h"},
 		{"-name", "bad\nname"},
 		{"-name", strings.Repeat("a", 65)},
 		{"-auth-max-failures", "0"},
