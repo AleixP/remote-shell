@@ -26,7 +26,9 @@ func (ts *testServer) findSession(t *testing.T, token, id string) (sessionJSON, 
 
 func (ts *testServer) waitStatus(t *testing.T, token, id, want string) sessionJSON {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
+	// PowerShell can take several seconds to start on a CI runner before it
+	// reads the input that makes it exit.
+	deadline := time.Now().Add(30 * time.Second)
 	for {
 		if s, ok := ts.findSession(t, token, id); ok && s.Status == want {
 			return s
