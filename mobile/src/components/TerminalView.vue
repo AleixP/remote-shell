@@ -62,6 +62,7 @@ let connection: TerminalConnection | null = null;
 let observer: ResizeObserver | null = null;
 let fitAddon: FitAddon | null = null;
 let removeResumeListener: (() => void) | null = null;
+let stopWatchingNetwork: (() => void) | null = null;
 
 // A hidden (inactive) tab has no size, so it can only be fitted once shown.
 function fitIfVisible(): void {
@@ -160,6 +161,7 @@ onMounted(async () => {
     },
   });
   connection = conn;
+  stopWatchingNetwork = conn.watchNetwork();
 
   t.onData(fromKeyboard);
   t.onResize(({ cols, rows }) => conn.resize(cols, rows));
@@ -179,6 +181,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   void setIosAccessoryBar(true);
+  stopWatchingNetwork?.();
   removeResumeListener?.();
   observer?.disconnect();
   // Leaving the screen disconnects; persistent sessions keep running.

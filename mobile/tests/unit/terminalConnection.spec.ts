@@ -322,6 +322,35 @@ describe('TerminalConnection', () => {
     expect(sockets).toHaveLength(2); // a closed connection stays closed
   });
 
+  test('reconnects as soon as the network comes back, even if the socket looks open', async () => {
+    const { conn, sockets, outputs } = setup();
+    const network = new EventTarget();
+    const stop = conn.watchNetwork(network);
+    conn.start();
+    await flush();
+    sockets[0].json({ type: 'session.ready' });
+    sockets[0].output(1, 'a');
+
+    network.dispatchEvent(new Event('online')); // Wi-Fi to mobile data
+    await flush();
+    expect(sockets[0].closed).toBe(true);
+    expect(sockets).toHaveLength(2);
+    sockets[1].json({ type: 'session.ready' });
+    expect(sockets[1].controlSent()[0]).toEqual({ type: 'session.resume', last_output_sequence: 1 });
+    sockets[1].output(2, 'b');
+    expect(outputs).toEqual(['a', 'b']);
+
+    stop(); // no longer listening
+    network.dispatchEvent(new Event('online'));
+    await flush();
+    expect(sockets).toHaveLength(2);
+
+    conn.close(); // a closed connection ignores the network
+    network.dispatchEvent(new Event('online'));
+    await flush();
+    expect(sockets).toHaveLength(2);
+  });
+
   test('ignores events from a replaced socket', async () => {
     const { conn, sockets, outputs } = setup();
     conn.start();

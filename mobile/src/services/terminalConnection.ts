@@ -122,6 +122,19 @@ export class TerminalConnection {
     void this.connect();
   }
 
+  /**
+   * Reconnects as soon as the device regains connectivity. After switching
+   * between Wi-Fi and mobile data the old socket is dead even if it still looks
+   * open, and the WebView can take minutes to notice; resuming is cheap and
+   * lossless, so it is always safe to replace the socket. Returns a function
+   * that stops listening.
+   */
+  watchNetwork(target: Pick<EventTarget, 'addEventListener' | 'removeEventListener'> = window): () => void {
+    const onOnline = (): void => this.reconnectNow();
+    target.addEventListener('online', onOnline);
+    return () => target.removeEventListener('online', onOnline);
+  }
+
   /** Disconnects without ending the session (persistent sessions keep running). */
   close(): void {
     this.stopped = true;
