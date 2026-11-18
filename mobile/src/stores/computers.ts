@@ -5,6 +5,7 @@ import { AgentApi } from '@/services/api';
 import { getServices } from '@/services/container';
 import { AgentError } from '@/services/errors';
 import type { PairingInfo } from '@/services/pairing';
+import { withTimeout } from '@/services/timeout';
 
 /** A paired computer. Its token lives in secure storage, never here. */
 export interface Computer {
@@ -75,8 +76,19 @@ export const useComputersStore = defineStore('computers', () => {
     const api = new AgentApi(info.baseUrl, () => undefined, services.fetch);
     const result = await api.pair(info.code, await services.deviceName());
 
-    // Store the credential first: if this fails the computer is not listed.
-    await services.secure.set(tokenKey(result.device_id), result.access_token);
+    // Store the credential first: if this fails the computer is not listed, and
+    // the device just registered on the agent is revoked so it does not linger.
+    try {
+      await withTimeout(
+        services.secure.set(tokenKey(result.device_id), result.access_token),
+        10_000,
+        'Saving the credential on this phone',
+      );
+    } catch (err) {
+      const authed = new AgentApi(info.baseUrl, () => result.access_token, services.fetch);
+      await authed.revokeDevice(result.device_id).catch(() => undefined);
+      throw err;
+    }
     tokens.set(result.device_id, result.access_token);
 
     // Pairing the same computer again replaces the old entry.

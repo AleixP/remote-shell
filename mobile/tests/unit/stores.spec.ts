@@ -69,6 +69,21 @@ describe('computers store', () => {
     expect(JSON.stringify(store.computers)).not.toContain('secret-token');
   });
 
+  test('if the credential cannot be saved, nothing is listed and the new device is revoked', async () => {
+    const agent = fakeAgent({
+      'POST /pair': pairOk,
+      'DELETE /devices/dev_1': () => json(200, { success: true }),
+    });
+    useAgent(agent);
+    secure.set = async () => {
+      throw new Error('keychain unavailable');
+    };
+    const store = useComputersStore();
+    await expect(store.pair(info)).rejects.toThrow('keychain unavailable');
+    expect(store.computers).toEqual([]);
+    expect(agent.calls.at(-1)).toMatchObject({ method: 'DELETE', url: '/devices/dev_1', auth: 'Bearer secret-token' });
+  });
+
   test('sends the device name and pairing code, without credentials', async () => {
     let body: unknown;
     const agent = fakeAgent({

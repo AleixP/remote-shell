@@ -8,6 +8,7 @@ describe('describeError', () => {
   test('explains the common failures', () => {
     expect(describeError(new AgentError(0, NETWORK_ERROR, 'x'))).toMatch(/Tailscale/);
     expect(describeError(new AgentError(401, 'PAIRING_EXPIRED', 'x'))).toMatch(/remote-shell pair/);
+    expect(describeError(new AgentError(0, 'TIMEOUT', 'Saving timed out.'))).toMatch(/timed out.*try again/);
     expect(describeError(new AgentError(401, 'DEVICE_REVOKED', 'x'))).toMatch(/pair again/);
     expect(describeError(new AgentError(429, 'RATE_LIMITED', 'x', 30))).toMatch(/30 seconds/);
     expect(describeError(new AgentError(429, 'RATE_LIMITED', 'x'))).toMatch(/few minutes/);

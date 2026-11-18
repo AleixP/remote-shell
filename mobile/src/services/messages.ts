@@ -1,5 +1,6 @@
 import { AgentError, NETWORK_ERROR } from './errors';
 import { PairingError } from './pairing';
+import { TIMEOUT } from './timeout';
 
 /** A user-facing explanation of an error. */
 export function describeError(err: unknown): string {
@@ -8,6 +9,8 @@ export function describeError(err: unknown): string {
     switch (err.code) {
       case NETWORK_ERROR:
         return 'Cannot reach the computer. Check that Tailscale is connected on this phone and that the agent is running.';
+      case TIMEOUT:
+        return `${err.message} Check the connection and try again.`;
       case 'PAIRING_EXPIRED':
         return 'The pairing code is invalid, expired or already used. Run "remote-shell pair" on the computer and scan the new QR code.';
       case 'DEVICE_REVOKED':

@@ -1,6 +1,9 @@
 import { AgentError, NETWORK_ERROR } from './errors';
+import { withTimeout } from './timeout';
 
 import type { ConnectionTicket, CreateSessionRequest, Device, Health, PairResult, Session } from '@/types/api';
+
+const REQUEST_TIMEOUT_MS = 15_000;
 
 type FetchFn = (input: string, init?: RequestInit) => Promise<Response>;
 
@@ -28,12 +31,17 @@ export class AgentApi {
 
     let res: Response;
     try {
-      res = await this.fetchFn(`${this.baseUrl}/api/v1${path}`, {
-        method,
-        headers,
-        body: body === undefined ? undefined : JSON.stringify(body),
-      });
-    } catch {
+      res = await withTimeout(
+        this.fetchFn(`${this.baseUrl}/api/v1${path}`, {
+          method,
+          headers,
+          body: body === undefined ? undefined : JSON.stringify(body),
+        }),
+        REQUEST_TIMEOUT_MS,
+        'The request to the computer',
+      );
+    } catch (err) {
+      if (err instanceof AgentError) throw err;
       throw new AgentError(0, NETWORK_ERROR, 'Cannot reach the computer.');
     }
 
