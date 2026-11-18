@@ -17,6 +17,7 @@ const (
 	codePairingExpired   = "PAIRING_EXPIRED"
 	codeDeviceNotFound   = "DEVICE_NOT_FOUND"
 	codeSessionNotFound  = "SESSION_NOT_FOUND"
+	codeSessionClosed    = "SESSION_CLOSED"
 	codeShellNotAvail    = "SHELL_NOT_AVAILABLE"
 	codeSessionLimit     = "SESSION_LIMIT_REACHED"
 	codeTerminalError    = "TERMINAL_ERROR"

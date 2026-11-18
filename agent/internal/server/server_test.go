@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/AleixP/remote-shell/agent/internal/auth"
+	"github.com/AleixP/remote-shell/agent/internal/sessionlog"
 	"github.com/AleixP/remote-shell/agent/internal/storage"
 	"github.com/AleixP/remote-shell/agent/internal/terminal"
 )
@@ -62,6 +63,7 @@ func writeCert(t *testing.T, dir string, serial int64, dns []string, notAfter ti
 }
 
 type testServer struct {
+	db       *storage.DB
 	sessions *terminal.Manager
 	auth     *auth.Service
 	srv      *Server
@@ -95,9 +97,10 @@ func startServerWith(t *testing.T, maxSessions int, mutate func(*Options)) *test
 	t.Cleanup(func() { _ = db.Close() })
 	authSvc := auth.New(db)
 	sessions := terminal.NewManager(maxSessions)
+	sessions.SetRecorder(sessionlog.New(db, slog.New(slog.NewTextHandler(io.Discard, nil))))
 	t.Cleanup(sessions.CloseAll)
 	opts := Options{Listen: "127.0.0.1", Port: 8443, TLSCertFile: certFile, TLSKeyFile: keyFile,
-		Auth: authSvc, Sessions: sessions, Shells: terminal.DetectShells(),
+		Auth: authSvc, History: db, Sessions: sessions, Shells: terminal.DetectShells(),
 		AuthMaxFailures: 1000, OpsPerMinute: 6000,
 		Logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
 	if mutate != nil {
@@ -112,7 +115,7 @@ func startServerWith(t *testing.T, maxSessions int, mutate func(*Options)) *test
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	ts := &testServer{sessions: sessions, auth: authSvc, srv: srv, certFile: certFile, keyFile: keyFile, dir: dir, cancel: cancel, done: make(chan error, 1)}
+	ts := &testServer{db: db, sessions: sessions, auth: authSvc, srv: srv, certFile: certFile, keyFile: keyFile, dir: dir, cancel: cancel, done: make(chan error, 1)}
 	go func() { ts.done <- srv.Serve(ctx, ln) }()
 	ts.url = "https://" + ln.Addr().String()
 	t.Cleanup(func() { cancel() })

@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"path/filepath"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -23,6 +24,42 @@ const (
 	Persistent SessionType = "persistent"
 	Temporary  SessionType = "temporary"
 )
+
+// EndReason says why a session ended on its own.
+type EndReason string
+
+const (
+	// EndedExited: the shell process exited.
+	EndedExited EndReason = "exited"
+	// EndedExpired: a temporary session timed out.
+	EndedExpired EndReason = "expired"
+)
+
+// SessionInfo is what a Recorder is told about a new session.
+type SessionInfo struct {
+	ID        string
+	Name      string
+	Type      SessionType
+	Shell     string
+	CreatedAt time.Time
+}
+
+// Recorder is told about session lifecycle events so they can be persisted.
+// It is optional; calls are made synchronously and must not block for long.
+type Recorder interface {
+	Started(SessionInfo)
+	// Ended is called when a session ends by itself or by expiry. exitCode is
+	// -1 when unknown.
+	Ended(id string, reason EndReason, exitCode int)
+	// Removed is called when a client closes a session on purpose.
+	Removed(id string)
+}
+
+type nopRecorder struct{}
+
+func (nopRecorder) Started(SessionInfo)          {}
+func (nopRecorder) Ended(string, EndReason, int) {}
+func (nopRecorder) Removed(string)               {}
 
 // Session is one independent terminal owned by the Manager.
 type Session struct {
@@ -112,6 +149,23 @@ type Manager struct {
 	max      int // 0 means unlimited
 
 	outputBytes int // output buffer size per session; 0 means the default
+	rec         Recorder
+}
+
+// SetRecorder sets who is told about session lifecycle events.
+func (m *Manager) SetRecorder(r Recorder) {
+	m.mu.Lock()
+	m.rec = r
+	m.mu.Unlock()
+}
+
+func (m *Manager) recorder() Recorder {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.rec == nil {
+		return nopRecorder{}
+	}
+	return m.rec
 }
 
 // SetOutputBufferBytes sets the output retained per new session.
@@ -167,20 +221,28 @@ func (m *Manager) Create(opts CreateOptions) (*Session, error) {
 		Output: NewOutputBuffer(m.outputBytes)}
 	m.sessions[id] = s
 	m.mu.Unlock()
+	m.recorder().Started(SessionInfo{ID: id, Name: s.Name, Type: s.Type, Shell: filepath.Base(opts.Shell), CreatedAt: s.CreatedAt})
 	go s.pump()
 
 	go func() {
 		<-t.Done()
-		m.remove(id)
+		stillListed := m.remove(id)
 		_ = t.Close()
+		// A session already taken out by Close or expiry was recorded there.
+		if stillListed {
+			m.recorder().Ended(id, EndedExited, t.ExitCode())
+		}
 	}()
 	return s, nil
 }
 
-func (m *Manager) remove(id string) {
+// remove forgets a session and reports whether it was still listed.
+func (m *Manager) remove(id string) bool {
 	m.mu.Lock()
+	defer m.mu.Unlock()
+	_, ok := m.sessions[id]
 	delete(m.sessions, id)
-	m.mu.Unlock()
+	return ok
 }
 
 // Get returns an active session.
@@ -215,6 +277,7 @@ func (m *Manager) Close(id string) error {
 	if !ok {
 		return ErrSessionNotFound
 	}
+	m.recorder().Removed(id)
 	return s.Terminal.Close()
 }
 
@@ -250,8 +313,10 @@ func (m *Manager) ExpireIdle(now time.Time, ttl time.Duration) []string {
 	m.mu.Unlock()
 
 	ids := make([]string, len(expired))
+	rec := m.recorder()
 	for i, s := range expired {
 		ids[i] = s.ID
+		rec.Ended(s.ID, EndedExpired, -1)
 		_ = s.Terminal.Close()
 	}
 	return ids

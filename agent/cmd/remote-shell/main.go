@@ -14,6 +14,7 @@ import (
 	"github.com/AleixP/remote-shell/agent/internal/config"
 	"github.com/AleixP/remote-shell/agent/internal/control"
 	"github.com/AleixP/remote-shell/agent/internal/server"
+	"github.com/AleixP/remote-shell/agent/internal/sessionlog"
 	"github.com/AleixP/remote-shell/agent/internal/storage"
 	"github.com/AleixP/remote-shell/agent/internal/terminal"
 )
@@ -58,6 +59,14 @@ func runAgent(args []string) int {
 	defer db.Close()
 	authSvc := auth.New(db)
 
+	// Processes do not survive an agent restart: anything still recorded as
+	// running belongs to a previous run and is over.
+	if n, err := db.MarkRunningSessionsLost(time.Now()); err != nil {
+		log.Warn("cannot mark previous sessions as ended", "error", err)
+	} else if n > 0 {
+		log.Info("sessions from a previous run marked as ended", "count", n)
+	}
+
 	shells := terminal.DetectShells()
 	if cfg.DefaultShell != "" {
 		if err := shells.SetDefault(cfg.DefaultShell); err != nil {
@@ -71,20 +80,23 @@ func runAgent(args []string) int {
 	}
 	sessions := terminal.NewManager(cfg.MaxSessions)
 	sessions.SetOutputBufferBytes(cfg.OutputBufferKB << 10)
+	sessions.SetRecorder(sessionlog.New(db, log))
 	defer sessions.CloseAll()
 
 	srv, err := server.New(server.Options{
-		Listen:          cfg.Listen,
-		Port:            cfg.Port,
-		TLSCertFile:     cfg.TLSCertFile,
-		TLSKeyFile:      cfg.TLSKeyFile,
-		Auth:            authSvc,
-		AuthMaxFailures: cfg.AuthMaxFailures,
-		AuthLockout:     cfg.AuthLockout,
-		OpsPerMinute:    cfg.OpsPerMinute,
-		Sessions:        sessions,
-		Shells:          shells,
-		Logger:          log,
+		Listen:           cfg.Listen,
+		Port:             cfg.Port,
+		TLSCertFile:      cfg.TLSCertFile,
+		TLSKeyFile:       cfg.TLSKeyFile,
+		Auth:             authSvc,
+		History:          db,
+		HistoryRetention: cfg.SessionHistory,
+		AuthMaxFailures:  cfg.AuthMaxFailures,
+		AuthLockout:      cfg.AuthLockout,
+		OpsPerMinute:     cfg.OpsPerMinute,
+		Sessions:         sessions,
+		Shells:           shells,
+		Logger:           log,
 	})
 	if err != nil {
 		log.Error("cannot start agent", "error", err)
@@ -110,6 +122,7 @@ func runAgent(args []string) int {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	go sessions.RunJanitor(ctx, cfg.TempSessionTTL, 30*time.Second)
+	go purgeHistory(ctx, db, cfg.SessionHistory, log)
 	var wg sync.WaitGroup
 	var failed bool
 	var mu sync.Mutex
@@ -132,4 +145,26 @@ func runAgent(args []string) int {
 		return 1
 	}
 	return 0
+}
+
+// purgeHistory deletes ended sessions older than the retention period.
+func purgeHistory(ctx context.Context, db *storage.DB, retention time.Duration, log *slog.Logger) {
+	purge := func() {
+		if n, err := db.PurgeEndedSessions(time.Now().Add(-retention)); err != nil {
+			log.Warn("cannot purge old sessions", "error", err)
+		} else if n > 0 {
+			log.Debug("old sessions purged", "count", n)
+		}
+	}
+	purge()
+	t := time.NewTicker(time.Hour)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			purge()
+		}
+	}
 }

@@ -76,7 +76,7 @@ func (s *Server) handleConnectionTicket(w http.ResponseWriter, r *http.Request) 
 	}
 	id := r.PathValue("id")
 	if _, err := s.sessions.Get(id); err != nil {
-		writeError(w, http.StatusNotFound, codeSessionNotFound, "The requested session does not exist.")
+		s.writeSessionGone(w, id)
 		return
 	}
 	tk, exp := s.tickets.Issue(deviceFrom(r.Context()).ID, id)
@@ -84,6 +84,16 @@ func (s *Server) handleConnectionTicket(w http.ResponseWriter, r *http.Request) 
 		"ticket":     tk,
 		"expires_at": exp.UTC().Format(time.RFC3339),
 	})
+}
+
+// writeSessionGone answers for a session that is not running: 410 if it ended
+// and is still remembered, 404 if it is unknown.
+func (s *Server) writeSessionGone(w http.ResponseWriter, id string) {
+	if _, ok := s.endedSession(id); ok {
+		writeError(w, http.StatusGone, codeSessionClosed, "The session has ended.")
+		return
+	}
+	writeError(w, http.StatusNotFound, codeSessionNotFound, "The requested session does not exist.")
 }
 
 // wsConn wraps a WebSocket connection with the protocol's message helpers.
@@ -140,7 +150,7 @@ func (s *Server) handleTerminal(w http.ResponseWriter, r *http.Request) {
 	}
 	sess, err := s.sessions.Get(id)
 	if err != nil {
-		writeError(w, http.StatusNotFound, codeSessionNotFound, "The requested session does not exist.")
+		s.writeSessionGone(w, id)
 		return
 	}
 	if !sess.TryAttach() {

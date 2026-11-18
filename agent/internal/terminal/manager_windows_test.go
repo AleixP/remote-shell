@@ -9,7 +9,10 @@ import (
 	"time"
 )
 
-const testShell = "cmd.exe"
+const (
+	testShell = "cmd.exe"
+	testExit3 = "exit 3\r\n"
+)
 
 func newTestSession(t *testing.T, m *Manager, name string) (*Session, *collector) {
 	t.Helper()

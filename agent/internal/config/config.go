@@ -39,6 +39,9 @@ type Config struct {
 	// and without activity before it is closed.
 	TempSessionTTL time.Duration
 
+	// SessionHistory is how long ended sessions stay listed in the app.
+	SessionHistory time.Duration
+
 	// ComputerName is the name shown in the mobile app for this computer.
 	ComputerName string
 
@@ -80,6 +83,7 @@ func Load(args []string, out io.Writer) (Config, error) {
 	fs.StringVar(&cfg.DataDir, "data-dir", "", "directory for the agent database (default: the user's config directory)")
 	fs.StringVar(&cfg.ComputerName, "name", "", "name shown in the mobile app (default: the computer's host name)")
 	fs.DurationVar(&cfg.TempSessionTTL, "temp-session-ttl", 30*time.Minute, "inactivity after which a temporary session with no client is closed (10s to 24h)")
+	fs.DurationVar(&cfg.SessionHistory, "session-history", 24*time.Hour, "how long ended sessions stay listed (1h to 720h)")
 	fs.DurationVar(&cfg.PairingTTL, "pairing-ttl", 5*time.Minute, "validity of pairing codes (30s to 1h)")
 	fs.IntVar(&cfg.MaxSessions, "max-sessions", 16, "maximum number of active terminal sessions")
 	fs.IntVar(&cfg.AuthMaxFailures, "auth-max-failures", 10, "failed authentications per minute that lock a client out")
@@ -115,6 +119,9 @@ func Load(args []string, out io.Writer) (Config, error) {
 	}
 	if cfg.TempSessionTTL < 10*time.Second || cfg.TempSessionTTL > 24*time.Hour {
 		return Config{}, fmt.Errorf("-temp-session-ttl must be between 10s and 24h")
+	}
+	if cfg.SessionHistory < time.Hour || cfg.SessionHistory > 720*time.Hour {
+		return Config{}, fmt.Errorf("-session-history must be between 1h and 720h")
 	}
 	if cfg.ComputerName == "" {
 		cfg.ComputerName, _ = os.Hostname()

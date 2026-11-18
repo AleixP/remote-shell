@@ -31,6 +31,8 @@ func TestLoadInvalid(t *testing.T) {
 		{"-rows", "100000"},
 		{"-unknown"},
 		{"-port", "0"},
+		{"-session-history", "1m"},
+		{"-session-history", "1000h"},
 		{"-temp-session-ttl", "1s"},
 		{"-temp-session-ttl", "48h"},
 		{"-name", "bad\nname"},

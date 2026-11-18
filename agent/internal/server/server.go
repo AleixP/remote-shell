@@ -12,6 +12,7 @@ import (
 
 	"github.com/AleixP/remote-shell/agent/internal/auth"
 	"github.com/AleixP/remote-shell/agent/internal/ratelimit"
+	"github.com/AleixP/remote-shell/agent/internal/storage"
 	"github.com/AleixP/remote-shell/agent/internal/terminal"
 	"github.com/AleixP/remote-shell/agent/internal/ticket"
 )
@@ -24,6 +25,14 @@ const (
 	shutdownTimeout = 5 * time.Second
 )
 
+// History gives access to the sessions that have ended. It is optional: without
+// it, an ended session simply stops existing.
+type History interface {
+	ListEndedSessions(since time.Time) ([]storage.SessionRecord, error)
+	GetEndedSession(id string, since time.Time) (storage.SessionRecord, error)
+	DeleteSession(id string) (bool, error)
+}
+
 // Options configures a Server.
 type Options struct {
 	// Listen is the IP to listen on. Empty means the Tailscale address.
@@ -33,9 +42,12 @@ type Options struct {
 	TLSCertFile string
 	TLSKeyFile  string
 
-	Auth     *auth.Service
-	Sessions *terminal.Manager
-	Shells   *terminal.Shells
+	Auth    *auth.Service
+	History History
+	// HistoryRetention is how long ended sessions stay visible (default 24h).
+	HistoryRetention time.Duration
+	Sessions         *terminal.Manager
+	Shells           *terminal.Shells
 	// TicketTTL is how long a WebSocket connection ticket stays valid
 	// (default 60s).
 	TicketTTL time.Duration
@@ -53,14 +65,16 @@ type Options struct {
 
 // Server is the agent's HTTPS server.
 type Server struct {
-	addr     string
-	port     int
-	certs    *certReloader
-	auth     *auth.Service
-	sessions *terminal.Manager
-	shells   *terminal.Shells
-	tickets  *ticket.Store
-	conns    *connRegistry
+	addr      string
+	port      int
+	certs     *certReloader
+	auth      *auth.Service
+	history   History
+	retention time.Duration
+	sessions  *terminal.Manager
+	shells    *terminal.Shells
+	tickets   *ticket.Store
+	conns     *connRegistry
 
 	authFails    *ratelimit.Lockout // failed auth/ticket attempts per client IP
 	pairFails    *ratelimit.Lockout // failed pairings per client IP
@@ -117,6 +131,10 @@ func New(opts Options) (*Server, error) {
 	s.tickets, s.conns = ticket.NewStore(ttl), newConnRegistry()
 	s.addr, s.port, s.certs, s.auth = addr, opts.Port, certs, opts.Auth
 	s.sessions, s.shells, s.log = opts.Sessions, opts.Shells, log
+	s.history, s.retention = opts.History, opts.HistoryRetention
+	if s.retention <= 0 {
+		s.retention = 24 * time.Hour
+	}
 	// A revoked device loses its tickets and its open terminal connections.
 	opts.Auth.OnRevoke(func(deviceID string) {
 		s.tickets.RevokeDevice(deviceID)

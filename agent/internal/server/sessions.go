@@ -3,10 +3,12 @@ package server
 import (
 	"errors"
 	"net/http"
+	"sort"
 	"time"
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/AleixP/remote-shell/agent/internal/storage"
 	"github.com/AleixP/remote-shell/agent/internal/terminal"
 )
 
@@ -19,6 +21,40 @@ type sessionJSON struct {
 	Status         string `json:"status"`
 	CreatedAt      string `json:"created_at"`
 	LastActivityAt string `json:"last_activity_at"`
+	// Only for sessions that have ended.
+	EndedAt   string `json:"ended_at,omitempty"`
+	EndReason string `json:"end_reason,omitempty"`
+	ExitCode  *int   `json:"exit_code,omitempty"`
+}
+
+// endedToJSON describes a session that is no longer running. After an agent
+// restart the process is gone, so the session is reported as exited.
+func endedToJSON(r storage.SessionRecord) sessionJSON {
+	status, reason := "exited", "process_exited"
+	switch r.EndReason {
+	case storage.EndExpired:
+		status, reason = "expired", "idle_timeout"
+	case storage.EndAgentRestart:
+		reason = "agent_restarted"
+	}
+	j := sessionJSON{
+		ID: r.ID, Name: r.Name, Type: r.Type, Status: status, EndReason: reason, ExitCode: r.ExitCode,
+		CreatedAt: r.CreatedAt.UTC().Format(time.RFC3339),
+	}
+	if r.EndedAt != nil {
+		j.EndedAt = r.EndedAt.UTC().Format(time.RFC3339)
+		j.LastActivityAt = j.EndedAt
+	}
+	return j
+}
+
+// endedSession looks up a session that has ended but is still remembered.
+func (s *Server) endedSession(id string) (storage.SessionRecord, bool) {
+	if s.history == nil {
+		return storage.SessionRecord{}, false
+	}
+	r, err := s.history.GetEndedSession(id, time.Now().Add(-s.retention))
+	return r, err == nil
 }
 
 func toSessionJSON(s *terminal.Session) sessionJSON {
@@ -46,9 +82,19 @@ func validDisplayName(name string) bool {
 
 func (s *Server) handleListSessions(w http.ResponseWriter, _ *http.Request) {
 	list := s.sessions.List()
-	out := make([]sessionJSON, len(list))
-	for i, sess := range list {
-		out[i] = toSessionJSON(sess)
+	out := make([]sessionJSON, 0, len(list))
+	for _, sess := range list {
+		out = append(out, toSessionJSON(sess))
+	}
+	if s.history != nil {
+		ended, err := s.history.ListEndedSessions(time.Now().Add(-s.retention))
+		if err != nil {
+			s.log.Error("list ended sessions failed", "error", err)
+		}
+		for _, r := range ended {
+			out = append(out, endedToJSON(r))
+		}
+		sort.SliceStable(out, func(i, j int) bool { return out[i].CreatedAt < out[j].CreatedAt })
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"sessions": out})
 }
@@ -110,8 +156,13 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetSession(w http.ResponseWriter, r *http.Request) {
-	sess, err := s.sessions.Get(r.PathValue("id"))
+	id := r.PathValue("id")
+	sess, err := s.sessions.Get(id)
 	if err != nil {
+		if rec, ok := s.endedSession(id); ok {
+			writeJSON(w, http.StatusOK, map[string]any{"session": endedToJSON(rec)})
+			return
+		}
 		writeError(w, http.StatusNotFound, codeSessionNotFound, "The requested session does not exist.")
 		return
 	}
@@ -121,6 +172,13 @@ func (s *Server) handleGetSession(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleCloseSession(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if err := s.sessions.Close(id); err != nil {
+		// An ended session is dismissed by deleting its record.
+		if _, ok := s.endedSession(id); ok {
+			if _, derr := s.history.DeleteSession(id); derr == nil {
+				writeJSON(w, http.StatusOK, map[string]bool{"success": true})
+				return
+			}
+		}
 		writeError(w, http.StatusNotFound, codeSessionNotFound, "The requested session does not exist.")
 		return
 	}
