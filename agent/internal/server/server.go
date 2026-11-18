@@ -17,8 +17,9 @@ import (
 	"github.com/AleixP/remote-shell/agent/internal/ticket"
 )
 
-// Version is the agent version reported by /api/v1/health.
-const Version = "0.1.0"
+// Version is the agent version reported by /api/v1/health. Release builds set
+// it with -ldflags "-X github.com/AleixP/remote-shell/agent/internal/server.Version=1.2.3".
+var Version = "dev"
 
 const (
 	maxBodyBytes    = 64 << 10

@@ -34,6 +34,9 @@ func run(args []string) int {
 			return runPair(args[1:], os.Stdout, os.Stderr)
 		case "devices":
 			return runDevices(args[1:], os.Stdout, os.Stderr)
+		case "version", "-version", "--version":
+			fmt.Println("remote-shell", server.Version)
+			return 0
 		case "doctor":
 			return runDoctor(args[1:], os.Stdout, os.Stderr)
 		case "service":

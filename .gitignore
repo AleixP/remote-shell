@@ -10,3 +10,5 @@ CLAUDE.md
 
 docs
 .playwright-mcp
+
+dist/

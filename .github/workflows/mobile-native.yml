@@ -1,0 +1,64 @@
+name: Mobile native builds
+
+# Checks that the Android and iOS projects still compile. Neither build is
+# signed: store releases need the maintainer's own signing credentials.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["mobile/**", ".github/workflows/mobile-native.yml"]
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    name: android (debug APK)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - run: npm ci
+      - run: npm run build
+      - run: npx cap sync android
+      - run: ./gradlew assembleDebug
+        working-directory: mobile/android
+      - uses: actions/upload-artifact@v4
+        with:
+          name: remote-shell-debug-apk
+          path: mobile/android/app/build/outputs/apk/debug/app-debug.apk
+
+  ios:
+    name: ios (simulator build)
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - run: npx cap sync ios
+      - name: Build for the simulator
+        working-directory: mobile/ios/App
+        run: >
+          xcodebuild -project App.xcodeproj -scheme App
+          -destination 'generic/platform=iOS Simulator'
+          -configuration Debug CODE_SIGNING_ALLOWED=NO build
