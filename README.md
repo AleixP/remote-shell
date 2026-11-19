@@ -4,6 +4,8 @@
 
 Open a terminal on any of your computers from your phone. A small Go agent on each computer exposes real shells, and a mobile app (Ionic Vue + Capacitor, with xterm.js) connects to it over your private [Tailscale](https://tailscale.com) network. There is no central server, no account and no port forwarding: the agent only listens on its Tailscale address.
 
+> **New here?** Follow the [Quickstart](QUICKSTART.md): from installing Tailscale to your first `ls` from the phone, with a list of common problems and their fixes.
+
 > **Status: early.** It works end to end and has a broad automated test suite, but it has been used by one person on a few devices. A remote shell is a sensitive tool: read [Security](#security) and [Limitations](#limitations) before you rely on it.
 
 ## What it does
