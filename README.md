@@ -182,6 +182,18 @@ mobile/   Ionic Vue + Capacitor app (iOS and Android projects included)
 scripts/  Release build script
 ```
 
+## How this repo is built
+
+An AI coding agent workflow wrote all of the code, tests, configuration and CI in this
+repository, from the Go agent to the mobile app. I wrote the plan for each ticket, reviewed the
+code and tested the app by hand on real devices. Commit messages carry the ticket number
+(`T-12: ...`).
+
+Manual testing so far covers macOS with an iPhone. Linux and Windows are covered by the
+automated tests in CI, and Android has only been tried on an emulator (see
+[Limitations](#limitations)). A remote shell is a sensitive tool, so reading the code before you
+trust it is worth the time.
+
 ## License
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
