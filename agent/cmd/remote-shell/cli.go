@@ -16,11 +16,15 @@ import (
 	"github.com/AleixP/remote-shell/agent/internal/control"
 )
 
-// cliClient parses the shared -data-dir flag and returns a control client.
-func cliClient(name string, args []string, stderr io.Writer) (*control.Client, *flag.FlagSet, error) {
+// cliClient parses the shared -data-dir flag, plus any flags a command adds
+// through extra, and returns a control client.
+func cliClient(name string, args []string, stderr io.Writer, extra ...func(*flag.FlagSet)) (*control.Client, *flag.FlagSet, error) {
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	dataDir := fs.String("data-dir", "", "agent data directory (default: the user's config directory)")
+	for _, add := range extra {
+		add(fs)
+	}
 	if err := fs.Parse(args); err != nil {
 		return nil, nil, err
 	}
@@ -35,7 +39,10 @@ func cliClient(name string, args []string, stderr io.Writer) (*control.Client, *
 }
 
 func runPair(args []string, stdout, stderr io.Writer) int {
-	client, _, err := cliClient("pair", args, stderr)
+	var showLink bool
+	client, _, err := cliClient("pair", args, stderr, func(fs *flag.FlagSet) {
+		fs.BoolVar(&showLink, "link", false, "also print the pairing link, to paste into the app when its camera cannot be used")
+	})
 	if err != nil {
 		return 2
 	}
@@ -55,6 +62,13 @@ func runPair(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintln(stdout)
 	fmt.Fprintln(stdout, qr.ToSmallString(false))
 	fmt.Fprintf(stdout, "Valid until %s and usable only once.\n", info.ExpiresAt.Local().Format("15:04:05"))
+	// The link holds the same secret as the QR code. It is only printed when
+	// asked for, so it does not end up on screen or in the scrollback by default.
+	if showLink {
+		fmt.Fprintln(stdout)
+		fmt.Fprintln(stdout, "Or, in the app, choose \"Or paste the pairing link\" and paste this. Anyone who sees it can pair until it expires:")
+		fmt.Fprintln(stdout, info.URL)
+	}
 	return 0
 }
 

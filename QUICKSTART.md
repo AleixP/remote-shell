@@ -195,6 +195,14 @@ Pairing gives this one phone its own credential. It takes the agent running (ste
 
 3. The computer appears in the list with the status **Online**.
 
+**Cannot scan** (no camera permission, or the QR code does not fit your terminal)? Ask for the link as well:
+
+```bash
+./bin/remote-shell pair -link
+```
+
+It prints the QR code and, below it, a line starting with `remoteshell://pair?`. Send that line to the phone (a note or a message to yourself works), then in the app tap **+**, paste it into **Or paste the pairing link** and tap the button below it. The link carries the same one-time secret as the QR code, so it is only printed when you ask, and anyone who sees it can pair until it expires.
+
 If you started the agent with a custom `-data-dir`, pass the same one to `pair`.
 
 ## 9. Your first terminal
@@ -286,10 +294,10 @@ Codes last 5 minutes and work once. Run `remote-shell pair` again and scan the n
 The agent locks out a client after too many failed attempts (by default 10 in a minute, for 5 minutes). Wait, then try again with a fresh QR code.
 
 **"Could not scan. Check the camera permission, or paste the pairing link below."**
-Give the app the camera permission: on iPhone, Settings, Remote Shell, Camera; on Android, the app's permissions in Settings. Then scan again.
+Give the app the camera permission: on iPhone, Settings, Remote Shell, Camera; on Android, the app's permissions in Settings. Then scan again. Or skip the camera: run `remote-shell pair -link` and paste the link it prints into the app (see [step 8](#8-pair-the-phone)).
 
 **"This is not a Remote Shell pairing code." / "The pairing code is malformed." / "…contains an invalid host."**
-You scanned something that is not the agent's QR code, or the QR is cut off. Make the terminal window larger so the whole QR code is visible, and run `remote-shell pair` again.
+You scanned something that is not the agent's QR code, or the QR is cut off, or a pasted link was cut or changed on the way. Make the terminal window larger so the whole QR code is visible and run `remote-shell pair` again; or use `remote-shell pair -link` and paste the whole line.
 
 **"Unsupported pairing code version. Update the app or the agent."**
 The app and the agent are from versions that do not understand each other. Update both to the same release.
@@ -351,7 +359,7 @@ Same cause: an agent is already running with this data directory.
 Start the agent first. If you started it with `-data-dir`, pass the same `-data-dir` to `pair` and `devices`.
 
 **`pair` shows a QR code that the phone cannot read**
-Enlarge the terminal window or lower the font size so the QR fits without wrapping.
+Enlarge the terminal window or lower the font size so the QR fits without wrapping. If it still will not scan, use `remote-shell pair -link` and paste the link into the app.
 
 **"this is a temporary `go run` binary; build the agent first" (from `service install`)**
 Build it (`make build`) and run `service install` from that binary, not with `go run`.

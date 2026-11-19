@@ -101,7 +101,7 @@ Use `service start`, `stop` and `uninstall` to control it. Pass any agent flag t
 ## Pair your phone
 
 1. On the computer, run `./remote-shell pair`. It shows a QR code valid for 5 minutes and for a single use.
-2. In the app, tap **Pair a computer** and scan it (or paste the pairing link).
+2. In the app, tap **Pair a computer** and scan it. If the camera is not an option, run `./remote-shell pair -link` instead: it also prints the pairing link, which you paste into the app.
 3. Open the computer and tap **+** to start a terminal.
 
 Manage phones from the computer with `./remote-shell devices list` and `./remote-shell devices revoke <id>`. Removing a computer in the app can revoke that phone on the agent at the same time.

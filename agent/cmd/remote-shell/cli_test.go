@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -65,6 +66,57 @@ func TestPairCommandShowsQR(t *testing.T) {
 	// The secret only travels inside the QR, never as printed text.
 	if strings.Contains(out.String(), "code=") || strings.Contains(out.String(), "remoteshell://") {
 		t.Errorf("pairing secret printed as text:\n%s", out.String())
+	}
+}
+
+func TestPairLinkIsOnlyPrintedWhenAsked(t *testing.T) {
+	dir, _ := startControl(t)
+	var out, errOut bytes.Buffer
+	if code := runPair([]string{"-data-dir", dir, "-link"}, &out, &errOut); code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut.String())
+	}
+	var link string
+	for _, line := range strings.Split(out.String(), "\n") {
+		if strings.HasPrefix(line, "remoteshell://") {
+			link = strings.TrimSpace(line)
+		}
+	}
+	if link == "" {
+		t.Fatalf("no pairing link in the output:\n%s", out.String())
+	}
+	// It is the link the app accepts: version, host, a code and the name.
+	u, err := url.Parse(link)
+	if err != nil || u.Host != "pair" {
+		t.Fatalf("not a pairing link: %q (%v)", link, err)
+	}
+	q := u.Query()
+	if q.Get("v") != "1" || q.Get("host") == "" || len(q.Get("code")) < 26 {
+		t.Errorf("incomplete pairing link: %q", link)
+	}
+	if !strings.ContainsAny(out.String(), "█▀▄") {
+		t.Error("the QR code is missing when the link is printed")
+	}
+}
+
+func TestPairLinkIsTheSameSecretAsTheQR(t *testing.T) {
+	dir, a := startControl(t)
+	var out, errOut bytes.Buffer
+	if code := runPair([]string{"-link", "-data-dir", dir}, &out, &errOut); code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut.String())
+	}
+	var link string
+	for _, line := range strings.Split(out.String(), "\n") {
+		if strings.HasPrefix(line, "remoteshell://") {
+			link = strings.TrimSpace(line)
+		}
+	}
+	u, _ := url.Parse(link)
+	// The code in the link really pairs, once.
+	if _, _, err := a.Pair(u.Query().Get("code"), "phone"); err != nil {
+		t.Fatalf("the code in the link does not pair: %v", err)
+	}
+	if _, _, err := a.Pair(u.Query().Get("code"), "again"); err == nil {
+		t.Error("the code worked twice")
 	}
 }
 
