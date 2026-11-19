@@ -1,7 +1,7 @@
 <template>
   <div class="terminal-root">
     <div v-if="state !== 'ready'" class="terminal-banner" role="status">{{ stateLabel }}</div>
-    <div ref="host" class="terminal-host" />
+    <div ref="host" v-long-press="onHold" class="terminal-host" />
     <div class="terminal-keys" role="toolbar" aria-label="Terminal keys">
       <!-- pointerdown + preventDefault keeps the focus (and the keyboard) on the terminal -->
       <button type="button" @pointerdown.prevent="send(KEY_ESC)">Esc</button>
@@ -9,6 +9,8 @@
       <button type="button" :class="{ active: ctrl }" :aria-pressed="ctrl" @pointerdown.prevent="ctrl = !ctrl">
         Ctrl
       </button>
+      <button type="button" aria-label="Copy" @pointerdown.prevent @click="copySelectionOrScreen">Copy</button>
+      <button type="button" aria-label="Paste" @pointerdown.prevent @click="pasteFromClipboard()">Paste</button>
       <button type="button" aria-label="Up" @pointerdown.prevent="arrow('up')">↑</button>
       <button type="button" aria-label="Down" @pointerdown.prevent="arrow('down')">↓</button>
       <button type="button" aria-label="Left" @pointerdown.prevent="arrow('left')">←</button>
@@ -23,11 +25,17 @@
 <script setup lang="ts">
 import { FitAddon } from '@xterm/addon-fit';
 import { Terminal } from '@xterm/xterm';
+import { actionSheetController, alertController, toastController } from '@ionic/vue';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
 import { Capacitor } from '@capacitor/core';
 
+import { useTerminalSelection } from '@/composables/useTerminalSelection';
+import { longPress } from '@/directives/longPress';
+import { readClipboard, writeClipboard } from '@/services/clipboard';
+import { checkPaste, MAX_PASTE_BYTES } from '@/services/paste';
 import { TerminalConnection, type ConnectionState } from '@/services/terminalConnection';
+import { readLineAt, readRows } from '@/services/terminalText';
 import { applyCtrl, arrowSequence, KEY_ESC, KEY_TAB, type Arrow } from '@/services/terminalKeys';
 import { useComputersStore } from '@/stores/computers';
 
@@ -51,6 +59,7 @@ const emit = defineEmits<{
 }>();
 
 const SYMBOLS = ['|', '/', '-', '~'];
+const vLongPress = longPress;
 
 const computers = useComputersStore();
 const host = ref<HTMLDivElement>();
@@ -118,8 +127,122 @@ function fromKeyboard(data: string): void {
   }
 }
 
+async function toast(message: string): Promise<void> {
+  await (await toastController.create({ message, duration: 1800, position: 'top' })).present();
+}
+
+async function copyText(text: string, what: string): Promise<void> {
+  if (!text) return toast('Nothing to copy');
+  try {
+    await writeClipboard(text);
+    await toast(`Copied ${what}`);
+  } catch {
+    await toast('Could not copy to the clipboard');
+  }
+}
+
+function screenText(): string {
+  const buffer = term?.buffer.active;
+  return buffer && term ? readRows(buffer, buffer.viewportY, buffer.viewportY + term.rows - 1) : '';
+}
+
+// The Copy button: what is selected, or else what is on the screen.
+function copySelectionOrScreen(): void {
+  const selection = term?.getSelection();
+  void (selection ? copyText(selection, 'selection') : copyText(screenText(), 'screen'));
+  term?.focus();
+}
+
+function confirmPaste(lines: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    void alertController
+      .create({
+        header: `Paste ${lines} lines?`,
+        message: 'This shell runs each line as soon as it arrives. Check the text before pasting.',
+        buttons: [
+          { text: 'Cancel', role: 'cancel', handler: () => resolve(false) },
+          { text: 'Paste', handler: () => resolve(true) },
+        ],
+        backdropDismiss: false,
+      })
+      .then((alert) => alert.present());
+  });
+}
+
+/** Pastes `text`, or the clipboard when none is given. */
+async function pasteFromClipboard(text?: string): Promise<void> {
+  const t = term;
+  if (!t) return;
+  // Input sent while disconnected is only queued up to a small limit, and a
+  // paste would be cut or lost without notice.
+  if (state.value !== 'ready') return toast('Not connected. Try again once it reconnects.');
+  let raw = text;
+  if (raw === undefined) {
+    try {
+      raw = await readClipboard();
+    } catch {
+      return toast('Could not read the clipboard');
+    }
+  }
+  const check = checkPaste(raw, t.modes.bracketedPasteMode);
+  if (check.empty) return toast('The clipboard is empty');
+  if (check.tooLarge) return toast(`Too much text to paste (limit ${MAX_PASTE_BYTES / 1024 / 1024} MiB)`);
+  if (check.needsConfirm && !(await confirmPaste(check.lines))) return;
+  // paste() wraps the text as a block when the shell supports bracketed paste.
+  t.paste(check.text);
+  t.focus();
+}
+
+// Paste from a hardware keyboard or the system menu goes through the same checks.
+function onPasteEvent(e: ClipboardEvent): void {
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  void pasteFromClipboard(e.clipboardData?.getData('text/plain') ?? '');
+}
+
+// Press and hold, like a native app: select the word under the finger, drag to
+// extend it, and let go to get copy and paste.
+const selection = useTerminalSelection(
+  () => term,
+  () => host.value,
+  ({ text, row }) => void showSelectionMenu(text, row),
+);
+
+function onHold(e: PointerEvent): void {
+  selection.begin(e);
+}
+
+async function showSelectionMenu(text: string, row: number | null): Promise<void> {
+  const t = term;
+  if (!t) return;
+  const buffer = t.buffer.active;
+  const buttons: { text: string; role?: string; handler?: () => void }[] = [];
+  if (text.trim()) buttons.push({ text: 'Copy', handler: () => void copyText(text, 'text') });
+  if (row !== null && !text.includes('\n')) {
+    buttons.push({ text: 'Copy line', handler: () => void copyText(readLineAt(buffer, row), 'line') });
+  }
+  buttons.push(
+    { text: 'Copy screen', handler: () => void copyText(screenText(), 'screen') },
+    { text: 'Copy all output', handler: () => void copyText(readRows(buffer, 0, buffer.length - 1), 'output') },
+    { text: 'Paste', handler: () => void pasteFromClipboard() },
+    { text: 'Cancel', role: 'cancel' },
+  );
+  const oneLine = text.replace(/\s+/g, ' ').trim();
+  const sheet = await actionSheetController.create({
+    header: oneLine ? (oneLine.length > 40 ? `${oneLine.slice(0, 40)}…` : oneLine) : undefined,
+    buttons,
+  });
+  await sheet.present();
+  void sheet.onDidDismiss().then(() => {
+    t.clearSelection();
+    t.focus();
+  });
+}
+
 onMounted(async () => {
   if (!host.value) return;
+  host.value.addEventListener('paste', onPasteEvent, true);
+  selection.attach();
   const t = new Terminal({
     cursorBlink: true,
     fontSize: 14,
@@ -180,6 +303,8 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  selection.detach();
+  host.value?.removeEventListener('paste', onPasteEvent, true);
   void setIosAccessoryBar(true);
   stopWatchingNetwork?.();
   removeResumeListener?.();

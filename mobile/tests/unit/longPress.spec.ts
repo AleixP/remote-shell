@@ -47,6 +47,13 @@ describe('v-long-press', () => {
     expect(onHold).toHaveBeenCalledTimes(1);
   });
 
+  test('gives the handler the pointer event, so it knows where the press was', () => {
+    const row = mount();
+    pointer(row, 'pointerdown', 42, 77);
+    vi.advanceTimersByTime(600);
+    expect(onHold.mock.calls[0][0]).toMatchObject({ clientX: 42, clientY: 77 });
+  });
+
   test('a quick tap is not a long press and still clicks', () => {
     const row = mount();
     pointer(row, 'pointerdown');

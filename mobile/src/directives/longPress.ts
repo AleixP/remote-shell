@@ -6,16 +6,16 @@ const MOVE_TOLERANCE_PX = 10;
 
 interface State {
   cleanup: () => void;
-  setHandler: (h: () => void) => void;
+  setHandler: (h: (e: PointerEvent) => void) => void;
 }
 const states = new WeakMap<HTMLElement, State>();
 
 /**
- * `v-long-press="handler"`: runs the handler when the element is pressed and
- * held. The click that ends the press is swallowed, so holding a row does not
+ * `v-long-press="handler"`: runs the handler (given the pointer event that
+ * started the press) when the element is pressed and held. The click that ends the press is swallowed, so holding a row does not
  * also open it. Scrolling or releasing early does nothing.
  */
-export const longPress: Directive<HTMLElement, () => void> = {
+export const longPress: Directive<HTMLElement, (e: PointerEvent) => void> = {
   mounted(el, binding) {
     let handler = binding.value;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -36,7 +36,7 @@ export const longPress: Directive<HTMLElement, () => void> = {
       timer = setTimeout(() => {
         timer = undefined;
         fired = true;
-        handler?.();
+        handler?.(p);
       }, HOLD_MS);
     };
     const onMove = (e: Event) => {
