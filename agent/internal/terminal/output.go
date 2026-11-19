@@ -91,14 +91,19 @@ func (b *OutputBuffer) Snapshot(seq uint64) (frames []Frame, truncated, closed b
 	if len(b.frames) == 0 {
 		return nil, false, closed, wake
 	}
+	// seq comes from the client, so it can be anything. A client that claims
+	// to be up to date or ahead has nothing to replay; this also keeps the
+	// arithmetic below from overflowing.
+	last := b.frames[len(b.frames)-1].Seq
+	if seq >= last {
+		return nil, false, closed, wake
+	}
 	first := b.frames[0].Seq
 	truncated = seq+1 < first
 	start := 0
 	if seq >= first {
-		start = int(seq - first + 1)
-	}
-	if start >= len(b.frames) {
-		return nil, truncated, closed, wake
+		// Frames are contiguous and seq < last, so this is below len(b.frames).
+		start = int(seq - first + 1) // #nosec G115 -- bounded by len(b.frames), see above
 	}
 	return append([]Frame(nil), b.frames[start:]...), truncated, closed, wake
 }

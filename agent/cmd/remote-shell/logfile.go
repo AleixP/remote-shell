@@ -17,5 +17,5 @@ func openLogFile(path string) (*os.File, error) {
 	if fi, err := os.Stat(path); err == nil && fi.Size() > maxLogBytes {
 		_ = os.Rename(path, path+".1")
 	}
-	return os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	return os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600) // #nosec G304 -- the operator chooses the log path with -log-file
 }

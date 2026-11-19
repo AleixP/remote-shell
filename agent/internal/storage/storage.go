@@ -29,7 +29,7 @@ func Open(path string) (*DB, error) {
 		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 			return nil, fmt.Errorf("create data dir: %w", err)
 		}
-		f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
+		f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600) // #nosec G304 -- the operator chooses the data directory
 		if err != nil {
 			return nil, fmt.Errorf("create database file: %w", err)
 		}

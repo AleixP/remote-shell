@@ -36,7 +36,9 @@ type Runner func(name string, args ...string) ([]byte, error)
 
 // ExecRunner runs real commands.
 func ExecRunner(name string, args ...string) ([]byte, error) {
-	return exec.Command(name, args...).CombinedOutput()
+	// Callers only pass fixed commands (launchctl, systemctl, schtasks) and
+	// arguments built from the service definition, never user-typed text.
+	return exec.Command(name, args...).CombinedOutput() // #nosec G204
 }
 
 // State is what a service is doing.
@@ -93,14 +95,14 @@ func (m *Manager) run(name string, args ...string) ([]byte, error) {
 func (m *Manager) Install(spec Spec) error {
 	switch m.GOOS {
 	case "darwin":
-		if err := writeFile(m.plistPath(), []byte(LaunchdPlist(spec))); err != nil {
+		if err := writeFile(m.plistPath(), []byte(LaunchdPlist(spec)), 0o644); err != nil {
 			return err
 		}
 		_, _ = m.Run("launchctl", "bootout", m.domain()+"/"+Label) // replace a previous install
 		_, err := m.run("launchctl", "bootstrap", m.domain(), m.plistPath())
 		return err
 	case "linux":
-		if err := writeFile(m.unitPath(), []byte(SystemdUnit(spec))); err != nil {
+		if err := writeFile(m.unitPath(), []byte(SystemdUnit(spec)), 0o644); err != nil {
 			return err
 		}
 		if _, err := m.run("systemctl", "--user", "daemon-reload"); err != nil {
@@ -110,7 +112,7 @@ func (m *Manager) Install(spec Spec) error {
 		return err
 	case "windows":
 		file := filepath.Join(m.TempDir, "remote-shell-task.xml")
-		if err := writeFile(file, WindowsTaskXML(spec)); err != nil {
+		if err := writeFile(file, WindowsTaskXML(spec), 0o600); err != nil {
 			return err
 		}
 		defer os.Remove(file)
@@ -238,11 +240,14 @@ func (m *Manager) Where() string {
 	return ""
 }
 
-func writeFile(path string, data []byte) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+// writeFile writes a service definition. launchd and systemd read these files
+// and they hold no secrets, so they are world-readable as usual; the temporary
+// Windows task file is private to the user (perm 0o600).
+func writeFile(path string, data []byte, perm os.FileMode) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0o644)
+	return os.WriteFile(path, data, perm) // #nosec G306 -- see above: callers choose 0o644 only for definitions without secrets
 }
 
 func removeIfExists(path string) error {
@@ -349,7 +354,7 @@ func WindowsTaskXML(s Spec) []byte {
 	out := make([]byte, 0, 2+2*len(units))
 	out = append(out, 0xFF, 0xFE)
 	for _, u := range units {
-		out = append(out, byte(u), byte(u>>8))
+		out = append(out, byte(u&0xff), byte(u>>8))
 	}
 	return out
 }
