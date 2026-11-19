@@ -15,8 +15,20 @@ updates:
     groups:
       npm-dependencies:
         update-types: [minor, patch]
+    ignore:
+      # vue-tsc does not support TypeScript 7 yet: revisit when it does.
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
+      # Keep the type definitions on the Node version the app and CI run on (24).
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    # One pull request for all actions: they edit the same workflow files, so
+    # separate ones would conflict with each other.
+    groups:
+      github-actions:
+        patterns: ["*"]
