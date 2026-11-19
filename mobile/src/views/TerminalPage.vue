@@ -27,6 +27,7 @@
           class="tab"
           :class="{ active: id === active }"
           :aria-selected="id === active"
+          v-long-press="() => renameTab(id)"
           @click="active = id"
         >
           <span class="dot" :class="dotClass(id)" />
@@ -74,10 +75,12 @@ import { useRoute, useRouter } from 'vue-router';
 import TerminalView from '@/components/TerminalView.vue';
 import { askSessionName } from '@/composables/askSessionName';
 import { useNewTerminal } from '@/composables/useNewTerminal';
+import { longPress } from '@/directives/longPress';
 import type { ConnectionState } from '@/services/terminalConnection';
 import { useSessionsStore } from '@/stores/sessions';
 import { useWorkspaceStore } from '@/stores/workspace';
 
+const vLongPress = longPress;
 const route = useRoute();
 const router = useRouter();
 const sessions = useSessionsStore();
@@ -120,10 +123,12 @@ const { chooseType } = useNewTerminal(() => computerId.value, {
   onError: (message) => void toast(message),
 });
 
-async function renameActive(): Promise<void> {
-  const original = sessions.byComputer[computerId.value]?.find((s) => s.id === active.value)?.name ?? '';
-  await askSessionName(computerId.value, active.value, original);
+async function renameTab(id: string): Promise<void> {
+  const original = sessions.byComputer[computerId.value]?.find((s) => s.id === id)?.name ?? '';
+  await askSessionName(computerId.value, id, original);
 }
+
+const renameActive = () => renameTab(active.value);
 
 async function confirmEnd(): Promise<void> {
   const id = active.value;

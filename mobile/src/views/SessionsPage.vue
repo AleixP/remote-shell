@@ -33,7 +33,13 @@
 
       <ion-list v-else>
         <ion-item-sliding v-for="s in sessions" :key="s.id">
-          <ion-item button :detail="!hasEnded(s)" :class="{ ended: hasEnded(s) }" @click="onTap(s)">
+          <ion-item
+            v-long-press="() => !hasEnded(s) && rename(s)"
+            button
+            :detail="!hasEnded(s)"
+            :class="{ ended: hasEnded(s) }"
+            @click="onTap(s)"
+          >
             <ion-icon slot="start" :icon="terminalOutline" />
             <ion-label>
               <h2>{{ sessionsStore.label(computerId, s.id) }}</h2>
@@ -48,10 +54,7 @@
           </ion-item>
           <ion-item-options side="end">
             <ion-item-option v-if="hasEnded(s)" color="medium" @click="dismiss(s)"> Remove </ion-item-option>
-            <template v-else>
-              <ion-item-option color="medium" @click="rename(s)">Rename</ion-item-option>
-              <ion-item-option color="danger" @click="confirmEnd(s)">End</ion-item-option>
-            </template>
+            <ion-item-option v-else color="danger" @click="confirmEnd(s)">End</ion-item-option>
           </ion-item-options>
         </ion-item-sliding>
       </ion-list>
@@ -90,12 +93,14 @@ import { useRoute, useRouter } from 'vue-router';
 
 import { useNewTerminal } from '@/composables/useNewTerminal';
 import { askSessionName } from '@/composables/askSessionName';
+import { longPress } from '@/directives/longPress';
 import { describeError, describeSessionEnd, hasEnded } from '@/services/messages';
 import { computerLabel, useComputersStore } from '@/stores/computers';
 import { useSessionsStore } from '@/stores/sessions';
 import { useWorkspaceStore } from '@/stores/workspace';
 import type { Session } from '@/types/api';
 
+const vLongPress = longPress;
 const route = useRoute();
 const router = useRouter();
 const computers = useComputersStore();

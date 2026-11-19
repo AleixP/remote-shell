@@ -25,7 +25,7 @@
 
       <ion-list v-else>
         <ion-item-sliding v-for="c in store.computers" :key="c.id">
-          <ion-item button detail @click="router.push(`/computers/${c.id}`)">
+          <ion-item v-long-press="() => rename(c)" button detail @click="router.push(`/computers/${c.id}`)">
             <ion-label>
               <h2>{{ computerLabel(c) }}</h2>
               <p v-if="c.alias" class="reported">{{ c.name }}</p>
@@ -36,7 +36,6 @@
             </ion-badge>
           </ion-item>
           <ion-item-options side="end">
-            <ion-item-option color="medium" @click="rename(c)">Rename</ion-item-option>
             <ion-item-option color="danger" @click="confirmRemove(c)">Remove</ion-item-option>
           </ion-item-options>
         </ion-item-sliding>
@@ -71,6 +70,7 @@ import {
 import { addOutline, desktopOutline } from 'ionicons/icons';
 import { useRouter } from 'vue-router';
 
+import { longPress } from '@/directives/longPress';
 import {
   type Computer,
   type ComputerStatus,
@@ -80,6 +80,7 @@ import {
 } from '@/stores/computers';
 
 const router = useRouter();
+const vLongPress = longPress;
 const store = useComputersStore();
 
 const STATUS_TEXT: Record<ComputerStatus, string> = {
