@@ -22,6 +22,9 @@ Thanks for your interest. Remote Shell is a small project, so the process is lig
 ```bash
 make help        # every agent command
 make check       # formatting, go vet (including Windows) and race tests
+make fuzz        # fuzz the parsers, authentication and the API with random input
+make gosec       # common security mistakes in the Go code
+make vuln        # known vulnerabilities in the Go code (govulncheck)
 cd mobile && npm ci && npm test && npm run lint
 ```
 

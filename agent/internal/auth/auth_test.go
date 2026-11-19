@@ -9,7 +9,7 @@ import (
 	"github.com/AleixP/remote-shell/agent/internal/storage"
 )
 
-func newService(t *testing.T) (*Service, *storage.DB) {
+func newService(t testing.TB) (*Service, *storage.DB) {
 	t.Helper()
 	db, err := storage.Open(":memory:")
 	if err != nil {

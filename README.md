@@ -163,6 +163,7 @@ Please report vulnerabilities privately rather than in a public issue.
 - No file transfer, session sharing between people, command history or push notifications.
 - Tested mainly on macOS with an iPhone. Linux and Windows are covered by automated tests in CI but have had little real-world use, and Android has been tried on an emulator only.
 - The app is not on any store, and there is no signed release of it.
+- **No independent security review yet.** CI runs `govulncheck`, `npm audit`, `gosec` and CodeQL, and fuzz tests throw malformed input at the parsers, authentication and the API. But nobody outside this project has audited the code, so do not rely on it to protect anything critical.
 
 ## Development
 

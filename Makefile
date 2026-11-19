@@ -29,6 +29,16 @@ FLAGS        ?=
 ID           ?=
 # Duration of the soak test in seconds.
 SOAK_SECONDS ?= 300
+# Time spent on each fuzz target.
+FUZZTIME     ?= 15s
+# Versions of the security tools, kept in step with .github/workflows/ci.yml.
+GOSEC_VERSION       := v2.30.0
+GOVULNCHECK_VERSION := v1.10.0
+# Every fuzz target as package:Name (go test takes one -fuzz target at a time).
+FUZZ_TARGETS := server:FuzzParseInputFrame server:FuzzParseControl server:FuzzValidDisplayName \
+	server:FuzzUnauthenticatedRequests server:FuzzSessionIDs auth:FuzzAuthenticate \
+	auth:FuzzPairRejectsUnknownCodes auth:FuzzValidName ticket:FuzzConsumeUnknownTickets \
+	terminal:FuzzOutputBuffer terminal:FuzzValidateSize config:FuzzValidComputerName
 
 # ---- Help -------------------------------------------------------------------
 
@@ -43,7 +53,8 @@ help: ## Show this help
 		'FLAGS'             'extra agent flags, e.g. FLAGS="-port 9443 -log-level debug"' \
 		'ID'                'device id (revoke)' \
 		'VERSION'           'version baked into the binary (build, release)' \
-		'SOAK_SECONDS'      'soak test duration, default $(SOAK_SECONDS)'
+		'SOAK_SECONDS'      'soak test duration, default $(SOAK_SECONDS)' \
+		'FUZZTIME'          'time per fuzz target, default $(FUZZTIME)'
 	@printf '\nExamples:\n'
 	@printf '  make run TLS_CERT=host.crt TLS_KEY=host.key\n'
 	@printf '  make revoke ID=3f2a\n'
@@ -94,6 +105,22 @@ cover-html: ## Write coverage.html and open it in a browser
 .PHONY: soak
 soak: ## Long-running stability test (SOAK_SECONDS, default 300)
 	RS_SOAK_SECONDS=$(SOAK_SECONDS) $(GO) test -count=1 -run TestSoak -v -timeout $$(( $(SOAK_SECONDS) + 120 ))s ./internal/server
+
+.PHONY: fuzz
+fuzz: ## Fuzz every parser and the API with random input (FUZZTIME per target)
+	@set -e; for t in $(FUZZ_TARGETS); do \
+		pkg=$${t%%:*}; name=$${t##*:}; \
+		echo "== $$pkg/$$name ($(FUZZTIME))"; \
+		(cd $(AGENT_DIR) && go test -run='^$$' -fuzz="^$$name"'$$' -fuzztime=$(FUZZTIME) ./internal/$$pkg); \
+	done
+
+.PHONY: gosec
+gosec: ## Look for common security mistakes in the Go code (gosec)
+	$(GO) run github.com/securego/gosec/v2/cmd/gosec@$(GOSEC_VERSION) -quiet ./...
+
+.PHONY: vuln
+vuln: ## Check the Go code for known vulnerabilities (govulncheck)
+	$(GO) run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) ./...
 
 .PHONY: vet
 vet: ## Run go vet for this system and for Windows

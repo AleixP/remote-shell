@@ -28,7 +28,7 @@ import (
 
 // writeCert writes a self-signed certificate and key into dir and returns
 // their paths.
-func writeCert(t *testing.T, dir string, serial int64, dns []string, notAfter time.Time) (certFile, keyFile string) {
+func writeCert(t testing.TB, dir string, serial int64, dns []string, notAfter time.Time) (certFile, keyFile string) {
 	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -75,18 +75,18 @@ type testServer struct {
 	done     chan error
 }
 
-func startServer(t *testing.T) *testServer { return startServerMax(t, 8) }
+func startServer(t testing.TB) *testServer { return startServerMax(t, 8) }
 
-func startServerMax(t *testing.T, maxSessions int) *testServer {
+func startServerMax(t testing.TB, maxSessions int) *testServer {
 	return startServerOpts(t, maxSessions, 0)
 }
 
-func startServerOpts(t *testing.T, maxSessions int, ticketTTL time.Duration) *testServer {
+func startServerOpts(t testing.TB, maxSessions int, ticketTTL time.Duration) *testServer {
 	return startServerWith(t, maxSessions, func(o *Options) { o.TicketTTL = ticketTTL })
 }
 
 // startServerWith starts a server with generous limits; mutate can change any option.
-func startServerWith(t *testing.T, maxSessions int, mutate func(*Options)) *testServer {
+func startServerWith(t testing.TB, maxSessions int, mutate func(*Options)) *testServer {
 	t.Helper()
 	dir := t.TempDir()
 	certFile, keyFile := writeCert(t, dir, 1, []string{"localhost"}, time.Now().Add(time.Hour))

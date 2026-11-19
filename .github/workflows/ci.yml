@@ -60,6 +60,11 @@ jobs:
       - name: govulncheck
         working-directory: agent
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.10.0 ./...
+      # Common security mistakes in the Go code (file permissions, command
+      # execution, weak crypto, integer overflows...). Tests are not scanned.
+      - name: gosec
+        working-directory: agent
+        run: go run github.com/securego/gosec/v2/cmd/gosec@v2.30.0 -quiet ./...
       - uses: actions/setup-node@v7
         with:
           node-version: 24

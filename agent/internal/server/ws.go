@@ -289,11 +289,12 @@ func (s *Server) readLoop(ctx context.Context, cancel context.CancelFunc, ws *ws
 		}
 		switch typ {
 		case websocket.MessageBinary:
-			if len(data) < frameHeader || data[0] != frameInput || binary.BigEndian.Uint64(data[1:frameHeader]) != 0 {
+			payload, ok := parseInputFrame(data)
+			if !ok {
 				_ = ws.sendError(codeInvalidRequest, "Invalid terminal input frame.")
 				continue
 			}
-			if _, err := sess.Terminal.Write(data[frameHeader:]); err != nil {
+			if _, err := sess.Terminal.Write(payload); err != nil {
 				return
 			}
 		case websocket.MessageText:
@@ -302,14 +303,35 @@ func (s *Server) readLoop(ctx context.Context, cancel context.CancelFunc, ws *ws
 	}
 }
 
-func (s *Server) handleControl(ws *wsConn, sess *terminal.Session, data []byte, resume chan<- uint64) {
-	var msg struct {
-		Type               string `json:"type"`
-		LastOutputSequence uint64 `json:"last_output_sequence"`
-		Cols               int    `json:"cols"`
-		Rows               int    `json:"rows"`
+// parseInputFrame returns the payload of a terminal input frame sent by the
+// client: [type 1B = input][sequence 8B = 0][payload]. Input frames carry no
+// sequence number, so a non-zero one is rejected.
+func parseInputFrame(data []byte) (payload []byte, ok bool) {
+	if len(data) < frameHeader || data[0] != frameInput || binary.BigEndian.Uint64(data[1:frameHeader]) != 0 {
+		return nil, false
 	}
+	return data[frameHeader:], true
+}
+
+type controlMessage struct {
+	Type               string `json:"type"`
+	LastOutputSequence uint64 `json:"last_output_sequence"`
+	Cols               int    `json:"cols"`
+	Rows               int    `json:"rows"`
+}
+
+// parseControl decodes a JSON control message from the client.
+func parseControl(data []byte) (controlMessage, bool) {
+	var msg controlMessage
 	if json.Unmarshal(data, &msg) != nil {
+		return controlMessage{}, false
+	}
+	return msg, true
+}
+
+func (s *Server) handleControl(ws *wsConn, sess *terminal.Session, data []byte, resume chan<- uint64) {
+	msg, ok := parseControl(data)
+	if !ok {
 		_ = ws.sendError(codeInvalidRequest, "Invalid control message.")
 		return
 	}
