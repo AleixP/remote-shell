@@ -59,7 +59,7 @@ jobs:
       # the agent actually calls.
       - name: govulncheck
         working-directory: agent
-        run: go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.10.0 ./...
       - uses: actions/setup-node@v4
         with:
           node-version: 24
