@@ -45,3 +45,27 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm run test:unit
+
+  vulnerabilities:
+    name: vulnerabilities
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: agent/go.mod
+          cache-dependency-path: agent/go.sum
+      # Known vulnerabilities in the Go standard library and dependencies that
+      # the agent actually calls.
+      - name: govulncheck
+        working-directory: agent
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      # Only what ships inside the app: development tools are not a risk to users.
+      - name: npm audit (app dependencies)
+        working-directory: mobile
+        run: npm audit --omit=dev --audit-level=high
