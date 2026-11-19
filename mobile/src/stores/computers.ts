@@ -12,9 +12,19 @@ import { useWorkspaceStore } from '@/stores/workspace';
 export interface Computer {
   /** The device id the agent assigned to this phone; unique per computer. */
   id: string;
+  /** The name the computer reported when it was paired. */
   name: string;
+  /** A name chosen on this phone; it is shown instead of `name`. */
+  alias?: string;
   baseUrl: string;
   pairedAt: string;
+}
+
+export const MAX_NAME_LENGTH = 64;
+
+/** What to call a computer in the interface. */
+export function computerLabel(c: Pick<Computer, 'name' | 'alias'>): string {
+  return c.alias || c.name;
 }
 
 export type ComputerStatus = 'unknown' | 'checking' | 'online' | 'offline' | 'revoked';
@@ -28,6 +38,7 @@ function isComputer(v: unknown): v is Computer {
     !!c &&
     typeof c.id === 'string' &&
     typeof c.name === 'string' &&
+    (c.alias === undefined || typeof c.alias === 'string') &&
     typeof c.baseUrl === 'string' &&
     c.baseUrl.startsWith('https://')
   );
@@ -92,19 +103,30 @@ export const useComputersStore = defineStore('computers', () => {
     }
     tokens.set(result.device_id, result.access_token);
 
-    // Pairing the same computer again replaces the old entry.
+    // Pairing the same computer again replaces the old entry, keeping its alias.
+    const previous = computers.value.find((c) => c.baseUrl === info.baseUrl);
     for (const old of computers.value.filter((c) => c.baseUrl === info.baseUrl)) {
       await forget(old.id);
     }
     const computer: Computer = {
       id: result.device_id,
       name: info.name,
+      ...(previous?.alias ? { alias: previous.alias } : {}),
       baseUrl: info.baseUrl,
       pairedAt: new Date().toISOString(),
     };
     computers.value.push(computer);
     await persist();
     return computer;
+  }
+
+  /** Sets the name shown for a computer on this phone. An empty name restores the original. */
+  async function rename(id: string, alias: string): Promise<void> {
+    const computer = find(id);
+    const clean = alias.trim().slice(0, MAX_NAME_LENGTH);
+    if (clean && clean !== computer.name) computer.alias = clean;
+    else delete computer.alias;
+    await persist();
   }
 
   async function forget(id: string): Promise<void> {
@@ -152,5 +174,5 @@ export const useComputersStore = defineStore('computers', () => {
     return result;
   }
 
-  return { computers, status, loaded, load, apiFor, pair, remove, checkStatus };
+  return { computers, status, loaded, load, apiFor, pair, rename, remove, checkStatus };
 });

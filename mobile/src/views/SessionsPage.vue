@@ -5,7 +5,7 @@
         <ion-buttons slot="start">
           <ion-back-button default-href="/computers" />
         </ion-buttons>
-        <ion-title>{{ computer?.name ?? 'Computer' }}</ion-title>
+        <ion-title>{{ computer ? computerLabel(computer) : 'Computer' }}</ion-title>
         <ion-buttons slot="end">
           <ion-button aria-label="New terminal" @click="chooseType">
             <ion-icon slot="icon-only" :icon="addOutline" />
@@ -87,7 +87,7 @@ import { useRoute, useRouter } from 'vue-router';
 
 import { useNewTerminal } from '@/composables/useNewTerminal';
 import { describeError, describeSessionEnd, hasEnded } from '@/services/messages';
-import { useComputersStore } from '@/stores/computers';
+import { computerLabel, useComputersStore } from '@/stores/computers';
 import { useSessionsStore } from '@/stores/sessions';
 import { useWorkspaceStore } from '@/stores/workspace';
 import type { Session } from '@/types/api';

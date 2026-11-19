@@ -27,7 +27,8 @@
         <ion-item-sliding v-for="c in store.computers" :key="c.id">
           <ion-item button detail @click="router.push(`/computers/${c.id}`)">
             <ion-label>
-              <h2>{{ c.name }}</h2>
+              <h2>{{ computerLabel(c) }}</h2>
+              <p v-if="c.alias" class="reported">{{ c.name }}</p>
               <p>{{ c.baseUrl.replace('https://', '') }}</p>
             </ion-label>
             <ion-badge slot="end" :color="statusColor(store.status[c.id])">
@@ -35,6 +36,7 @@
             </ion-badge>
           </ion-item>
           <ion-item-options side="end">
+            <ion-item-option color="medium" @click="rename(c)">Rename</ion-item-option>
             <ion-item-option color="danger" @click="confirmRemove(c)">Remove</ion-item-option>
           </ion-item-options>
         </ion-item-sliding>
@@ -69,7 +71,13 @@ import {
 import { addOutline, desktopOutline } from 'ionicons/icons';
 import { useRouter } from 'vue-router';
 
-import { type Computer, type ComputerStatus, useComputersStore } from '@/stores/computers';
+import {
+  type Computer,
+  type ComputerStatus,
+  computerLabel,
+  MAX_NAME_LENGTH,
+  useComputersStore,
+} from '@/stores/computers';
 
 const router = useRouter();
 const store = useComputersStore();
@@ -106,9 +114,35 @@ async function refresh(ev: CustomEvent): Promise<void> {
   (ev.target as HTMLIonRefresherElement).complete();
 }
 
+async function rename(c: Computer): Promise<void> {
+  const alert = await alertController.create({
+    header: 'Rename computer',
+    message: `Only changes the name on this phone. Leave it empty to use "${c.name}".`,
+    inputs: [
+      {
+        name: 'alias',
+        type: 'text',
+        value: c.alias ?? '',
+        placeholder: c.name,
+        attributes: { maxlength: MAX_NAME_LENGTH },
+      },
+    ],
+    buttons: [
+      { text: 'Cancel', role: 'cancel' },
+      {
+        text: 'Save',
+        handler: (values: { alias?: string }) => {
+          void store.rename(c.id, values.alias ?? '');
+        },
+      },
+    ],
+  });
+  await alert.present();
+}
+
 async function confirmRemove(c: Computer): Promise<void> {
   const alert = await alertController.create({
-    header: `Remove ${c.name}?`,
+    header: `Remove ${computerLabel(c)}?`,
     message: 'Removing it only forgets it on this phone. Also revoke access so this phone can no longer connect.',
     inputs: [{ type: 'checkbox', label: 'Also revoke access on the computer', value: 'revoke', checked: true }],
     buttons: [
@@ -130,7 +164,7 @@ async function remove(c: Computer, revoke: boolean): Promise<void> {
   if (revoke && !revoked) {
     await (
       await toastController.create({
-        message: `Removed, but ${c.name} could not be reached to revoke access. Revoke it there with "remote-shell devices revoke".`,
+        message: `Removed, but ${computerLabel(c)} could not be reached to revoke access. Revoke it there with "remote-shell devices revoke".`,
         duration: 6000,
         position: 'top',
       })
@@ -140,6 +174,9 @@ async function remove(c: Computer, revoke: boolean): Promise<void> {
 </script>
 
 <style scoped>
+.reported {
+  font-size: 0.8rem;
+}
 .empty {
   display: flex;
   flex-direction: column;

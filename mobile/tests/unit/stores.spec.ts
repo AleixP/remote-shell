@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, test } from 'vitest';
 
 import { setServices } from '@/services/container';
 import { MemoryStore } from '@/services/storage';
-import { useComputersStore } from '@/stores/computers';
+import { computerLabel, useComputersStore } from '@/stores/computers';
 import { useSessionsStore } from '@/stores/sessions';
 import { useWorkspaceStore } from '@/stores/workspace';
 
@@ -121,6 +121,57 @@ describe('computers store', () => {
     expect(store.computers).toHaveLength(1);
     await (await store.apiFor('dev_1')).listSessions();
     expect(agent.calls.at(-1)?.auth).toBe('Bearer secret-token');
+  });
+
+  test('a computer can be given an alias on this phone, and it survives a restart', async () => {
+    useAgent(fakeAgent({ 'POST /pair': pairOk }));
+    const store = useComputersStore();
+    await store.pair(info);
+    expect(computerLabel(store.computers[0])).toBe('My Mac');
+
+    await store.rename('dev_1', '  Office Mac  ');
+    expect(computerLabel(store.computers[0])).toBe('Office Mac');
+    expect(store.computers[0].name).toBe('My Mac'); // the reported name is kept
+
+    const reloaded = restart();
+    await reloaded.load();
+    expect(computerLabel(reloaded.computers[0])).toBe('Office Mac');
+  });
+
+  test('an empty alias, or the reported name, restores the original name', async () => {
+    useAgent(fakeAgent({ 'POST /pair': pairOk }));
+    const store = useComputersStore();
+    await store.pair(info);
+    await store.rename('dev_1', 'Office Mac');
+    await store.rename('dev_1', '   ');
+    expect(store.computers[0].alias).toBeUndefined();
+    await store.rename('dev_1', 'Office Mac');
+    await store.rename('dev_1', 'My Mac');
+    expect(store.computers[0].alias).toBeUndefined();
+    expect(await prefs.get('computers')).not.toContain('alias');
+  });
+
+  test('aliases are limited in length and unknown computers are rejected', async () => {
+    useAgent(fakeAgent({ 'POST /pair': pairOk }));
+    const store = useComputersStore();
+    await store.pair(info);
+    await store.rename('dev_1', 'x'.repeat(200));
+    expect(store.computers[0].alias).toHaveLength(64);
+    await expect(store.rename('nope', 'a')).rejects.toThrow('Unknown computer');
+  });
+
+  test('pairing a computer again keeps its alias', async () => {
+    let n = 0;
+    useAgent(
+      fakeAgent({
+        'POST /pair': () => json(201, { device_id: `dev_${++n}`, access_token: `token-${n}`, token_type: 'Bearer' }),
+      }),
+    );
+    const store = useComputersStore();
+    await store.pair(info);
+    await store.rename('dev_1', 'Office Mac');
+    await store.pair(info);
+    expect(store.computers.map((c) => [c.id, computerLabel(c)])).toEqual([['dev_2', 'Office Mac']]);
   });
 
   test('pairing the same computer again replaces the old entry and token', async () => {
