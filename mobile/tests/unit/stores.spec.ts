@@ -297,6 +297,106 @@ describe('sessions store', () => {
     expect(sessions.byComputer['dev_1']).toEqual([]);
   });
 
+  /** A fake agent that creates "zsh" sessions with sequential ids and keeps them in a list. */
+  function sessionAgent() {
+    const list: Record<string, unknown>[] = [];
+    let n = 0;
+    return fakeAgent({
+      'POST /pair': pairOk,
+      'GET /sessions': () => json(200, { sessions: list }),
+      'POST /sessions': () => {
+        const session = { id: `ses_${++n}`, name: 'zsh', type: 'persistent', status: 'running', created_at: '' };
+        list.push(session);
+        return json(201, { session });
+      },
+      'DELETE /sessions/ses_1': () => json(200, { success: true }),
+      'DELETE /sessions/ses_2': () => json(200, { success: true }),
+    });
+  }
+
+  test('terminals of the same shell are numbered: zsh, zsh 2, zsh 3', async () => {
+    useAgent(sessionAgent());
+    await useComputersStore().pair(info);
+    const sessions = useSessionsStore();
+    await sessions.refresh('dev_1');
+    for (let i = 0; i < 3; i++) await sessions.create('dev_1', { type: 'persistent' });
+    expect(['ses_1', 'ses_2', 'ses_3'].map((id) => sessions.label('dev_1', id))).toEqual(['zsh', 'zsh 2', 'zsh 3']);
+    // The computer still calls all of them "zsh".
+    expect(sessions.byComputer['dev_1'].map((s) => s.name)).toEqual(['zsh', 'zsh', 'zsh']);
+  });
+
+  test('a freed number is reused', async () => {
+    useAgent(sessionAgent());
+    await useComputersStore().pair(info);
+    const sessions = useSessionsStore();
+    await sessions.refresh('dev_1');
+    await sessions.create('dev_1', { type: 'persistent' }); // zsh
+    await sessions.create('dev_1', { type: 'persistent' }); // zsh 2
+    await sessions.close('dev_1', 'ses_2');
+    await sessions.create('dev_1', { type: 'persistent' });
+    expect(sessions.label('dev_1', 'ses_3')).toBe('zsh 2');
+  });
+
+  test('a terminal can be renamed on this phone, and the name survives a restart', async () => {
+    useAgent(sessionAgent());
+    await useComputersStore().pair(info);
+    const sessions = useSessionsStore();
+    await sessions.refresh('dev_1');
+    await sessions.create('dev_1', { type: 'persistent' });
+
+    await sessions.rename('dev_1', 'ses_1', '  build server  ');
+    expect(sessions.label('dev_1', 'ses_1')).toBe('build server');
+
+    setActivePinia(createPinia());
+    const restarted = useSessionsStore();
+    await useComputersStore().load();
+    await restarted.refresh('dev_1');
+    expect(restarted.label('dev_1', 'ses_1')).toBe('build server');
+  });
+
+  test("an empty name, or the computer's own name, restores the original", async () => {
+    useAgent(sessionAgent());
+    await useComputersStore().pair(info);
+    const sessions = useSessionsStore();
+    await sessions.refresh('dev_1');
+    await sessions.create('dev_1', { type: 'persistent' });
+    await sessions.rename('dev_1', 'ses_1', 'x');
+    await sessions.rename('dev_1', 'ses_1', '');
+    expect(sessions.label('dev_1', 'ses_1')).toBe('zsh');
+    await sessions.rename('dev_1', 'ses_1', 'x');
+    await sessions.rename('dev_1', 'ses_1', 'zsh');
+    expect(sessions.aliases['dev_1']).toBeUndefined();
+    expect(await prefs.get('session_aliases')).toBe('{}');
+  });
+
+  test('names of sessions the computer no longer lists are forgotten', async () => {
+    const agent = sessionAgent();
+    useAgent(agent);
+    await useComputersStore().pair(info);
+    const sessions = useSessionsStore();
+    await sessions.refresh('dev_1');
+    await sessions.create('dev_1', { type: 'persistent' });
+    await sessions.rename('dev_1', 'ses_1', 'gone soon');
+
+    // The agent restarts and lists nothing.
+    useAgent(fakeAgent({ 'GET /sessions': () => json(200, { sessions: [] }) }));
+    await sessions.refresh('dev_1');
+    expect(sessions.aliases['dev_1']).toBeUndefined();
+    expect(await prefs.get('session_aliases')).toBe('{}');
+  });
+
+  test('corrupt stored session names are ignored', async () => {
+    await prefs.set('session_aliases', '{"dev_1":{"ses_1":42,"ses_2":"ok"},"dev_2":"x"}');
+    useAgent(sessionAgent());
+    await useComputersStore().pair(info);
+    const sessions = useSessionsStore();
+    await sessions.loadAliases();
+    expect(sessions.aliases).toEqual({ dev_1: { ses_2: 'ok' } });
+    await prefs.set('session_aliases', 'not json');
+    setActivePinia(createPinia());
+    await useSessionsStore().loadAliases();
+  });
+
   test('refreshing closes the tabs of sessions that ended or disappeared', async () => {
     const running = { id: 'ses_run', name: 'a', type: 'persistent', status: 'running', created_at: '' };
     const ended = {

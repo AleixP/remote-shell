@@ -36,7 +36,7 @@
           <ion-item button :detail="!hasEnded(s)" :class="{ ended: hasEnded(s) }" @click="onTap(s)">
             <ion-icon slot="start" :icon="terminalOutline" />
             <ion-label>
-              <h2>{{ s.name }}</h2>
+              <h2>{{ sessionsStore.label(computerId, s.id) }}</h2>
               <p>
                 {{ s.type === 'persistent' ? 'Persistent' : 'Temporary' }}
                 <template v-if="hasEnded(s)"> · {{ describeSessionEnd(s) }}</template>
@@ -48,7 +48,10 @@
           </ion-item>
           <ion-item-options side="end">
             <ion-item-option v-if="hasEnded(s)" color="medium" @click="dismiss(s)"> Remove </ion-item-option>
-            <ion-item-option v-else color="danger" @click="confirmEnd(s)">End</ion-item-option>
+            <template v-else>
+              <ion-item-option color="medium" @click="rename(s)">Rename</ion-item-option>
+              <ion-item-option color="danger" @click="confirmEnd(s)">End</ion-item-option>
+            </template>
           </ion-item-options>
         </ion-item-sliding>
       </ion-list>
@@ -86,6 +89,7 @@ import { computed, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import { useNewTerminal } from '@/composables/useNewTerminal';
+import { askSessionName } from '@/composables/askSessionName';
 import { describeError, describeSessionEnd, hasEnded } from '@/services/messages';
 import { computerLabel, useComputersStore } from '@/stores/computers';
 import { useSessionsStore } from '@/stores/sessions';
@@ -135,7 +139,9 @@ async function onRefresh(ev: CustomEvent): Promise<void> {
 
 function onTap(s: Session): void {
   if (hasEnded(s)) {
-    void toast(`"${s.name}" has ended. ${describeSessionEnd(s)}. Swipe it to remove it.`);
+    void toast(
+      `"${sessionsStore.label(computerId.value, s.id)}" has ended. ${describeSessionEnd(s)}. Swipe it to remove it.`,
+    );
     return;
   }
   open(s.id);
@@ -167,9 +173,13 @@ const { chooseType } = useNewTerminal(() => computerId.value, {
   },
 });
 
+async function rename(s: Session): Promise<void> {
+  await askSessionName(computerId.value, s.id, s.name);
+}
+
 async function confirmEnd(s: Session): Promise<void> {
   const alert = await alertController.create({
-    header: `End "${s.name}"?`,
+    header: `End "${sessionsStore.label(computerId.value, s.id)}"?`,
     message: 'The shell and everything running in it will be terminated.',
     buttons: [
       { text: 'Cancel', role: 'cancel' },

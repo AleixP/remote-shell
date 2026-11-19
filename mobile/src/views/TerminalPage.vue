@@ -10,6 +10,9 @@
           <ion-button aria-label="New terminal" @click="chooseType">
             <ion-icon slot="icon-only" :icon="addOutline" />
           </ion-button>
+          <ion-button aria-label="Rename terminal" @click="renameActive">
+            <ion-icon slot="icon-only" :icon="createOutline" />
+          </ion-button>
           <ion-button aria-label="End session" @click="confirmEnd">
             <ion-icon slot="icon-only" :icon="trashOutline" />
           </ion-button>
@@ -64,11 +67,12 @@ import {
   IonToolbar,
   toastController,
 } from '@ionic/vue';
-import { addOutline, trashOutline } from 'ionicons/icons';
+import { addOutline, createOutline, trashOutline } from 'ionicons/icons';
 import { computed, reactive, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import TerminalView from '@/components/TerminalView.vue';
+import { askSessionName } from '@/composables/askSessionName';
 import { useNewTerminal } from '@/composables/useNewTerminal';
 import type { ConnectionState } from '@/services/terminalConnection';
 import { useSessionsStore } from '@/stores/sessions';
@@ -88,7 +92,7 @@ const states = reactive<Record<string, ConnectionState>>({});
 const exited = reactive<Record<string, boolean>>({});
 
 function tabName(id: string): string {
-  return sessions.byComputer[computerId.value]?.find((s) => s.id === id)?.name ?? 'Terminal';
+  return sessions.label(computerId.value, id);
 }
 
 function dotClass(id: string): string {
@@ -115,6 +119,11 @@ const { chooseType } = useNewTerminal(() => computerId.value, {
   },
   onError: (message) => void toast(message),
 });
+
+async function renameActive(): Promise<void> {
+  const original = sessions.byComputer[computerId.value]?.find((s) => s.id === active.value)?.name ?? '';
+  await askSessionName(computerId.value, active.value, original);
+}
 
 async function confirmEnd(): Promise<void> {
   const id = active.value;
