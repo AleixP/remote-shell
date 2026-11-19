@@ -165,6 +165,8 @@ Please report vulnerabilities privately rather than in a public issue.
 
 ## Development
 
+`make help` lists the agent commands (build, run, test, soak, doctor, service, release...). The plain commands are:
+
 ```bash
 cd agent && go test -race ./...          # agent tests
 cd mobile && npm test && npm run lint    # app tests and lint

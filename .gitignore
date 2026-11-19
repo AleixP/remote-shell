@@ -12,3 +12,6 @@ docs
 .playwright-mcp
 
 dist/
+bin/
+agent/coverage.out
+agent/coverage.html
