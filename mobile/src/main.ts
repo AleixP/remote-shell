@@ -4,6 +4,7 @@ import { createApp } from 'vue';
 
 import App from './App.vue';
 import router from './router';
+import { hideSplash } from './services/splash';
 
 /* Core CSS required for Ionic components to work properly */
 import '@ionic/vue/css/core.css';
@@ -39,4 +40,6 @@ const app = createApp(App).use(createPinia()).use(IonicVue).use(router);
 
 router.isReady().then(() => {
   app.mount('#app');
+  // Let the first frame of the interface be drawn before the launch screen goes.
+  requestAnimationFrame(() => requestAnimationFrame(() => void hideSplash()));
 });

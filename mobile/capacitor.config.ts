@@ -8,6 +8,8 @@ const config: CapacitorConfig = {
     // Native HTTP: the webview origin (capacitor://localhost) would otherwise
     // need CORS on the agent, which deliberately has none.
     CapacitorHttp: { enabled: true },
+    // The launch screen stays up until the app hides it (see services/splash.ts).
+    SplashScreen: { launchAutoHide: false, launchFadeOutDuration: 250, showSpinner: false },
   },
 };
 
