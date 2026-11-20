@@ -51,23 +51,66 @@ export interface Cell {
   row: number;
 }
 
+/** A selection between two cells, both included, with `start` not after `end`. */
+export interface Range {
+  start: Cell;
+  end: Cell;
+}
+
 const isBefore = (a: Cell, b: Cell) => a.row < b.row || (a.row === b.row && a.col < b.col);
 
+/** The range between two cells given in any order. */
+export function orderRange(a: Cell, b: Cell): Range {
+  return isBefore(b, a) ? { start: b, end: a } : { start: a, end: b };
+}
+
 /**
- * What to select when a press-and-hold on a word is dragged to `current`:
- * the word itself while the finger stays inside it, otherwise the word plus
- * everything up to the finger, forwards or backwards, across rows. Returns the
- * arguments of xterm's `select(col, row, length)`.
+ * The range when a press-and-hold on a word is dragged to `current`: the word
+ * itself while the finger stays inside it, otherwise the word plus everything
+ * up to the finger, forwards or backwards, across rows.
  */
+export function extendRange(wordStart: Cell, wordEnd: Cell, current: Cell): Range {
+  if (isBefore(current, wordStart)) return { start: current, end: wordEnd };
+  if (isBefore(wordEnd, current)) return { start: wordStart, end: current };
+  return { start: wordStart, end: wordEnd };
+}
+
+/** The arguments of xterm's `select(col, row, length)` for a range. */
+export function selectArgs(range: Range, cols: number): { col: number; row: number; length: number } {
+  const { start, end } = range;
+  return { col: start.col, row: start.row, length: (end.row - start.row) * cols + (end.col - start.col) + 1 };
+}
+
+/** `extendRange`, as the arguments of xterm's `select`. */
 export function extendSelection(
   wordStart: Cell,
   wordEnd: Cell,
   current: Cell,
   cols: number,
 ): { col: number; row: number; length: number } {
-  let start = wordStart;
-  let end = wordEnd;
-  if (isBefore(current, wordStart)) start = current;
-  else if (isBefore(wordEnd, current)) end = current;
-  return { col: start.col, row: start.row, length: (end.row - start.row) * cols + (end.col - start.col) + 1 };
+  return selectArgs(extendRange(wordStart, wordEnd, current), cols);
+}
+
+/**
+ * Where a selection handle's edge is, in pixels, and the cell it belongs to.
+ * `left` is the left edge of the first column, `cellW` the width of a column.
+ * A handle sits on a boundary between columns: the start handle on the left
+ * edge of its cell, the end handle on the right edge of its cell.
+ */
+export function handleColumn(role: 'start' | 'end', edgeX: number, left: number, cellW: number, cols: number): number {
+  const boundary = Math.max(0, Math.min(cols, Math.round((edgeX - left) / cellW)));
+  return role === 'start' ? Math.min(boundary, cols - 1) : Math.max(boundary - 1, 0);
+}
+
+/**
+ * Selected text as it should be copied: without the blanks that pad the end of
+ * each terminal row, and without the empty rows after the last line of text
+ * (selecting everything also selects the unused rows below the prompt).
+ */
+export function trimSelection(text: string): string {
+  return text
+    .split('\n')
+    .map((line) => line.replace(/\s+$/, ''))
+    .join('\n')
+    .replace(/\n+$/, '');
 }

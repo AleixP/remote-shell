@@ -214,7 +214,7 @@ If you started the agent with a custom `-data-dir`, pass the same one to `pair`.
 Things worth knowing:
 
 - The row of keys above the keyboard has `Esc`, `Tab`, `Ctrl`, the arrows and common symbols, plus **Copy** and **Paste**.
-- **Press and hold** on the terminal to select a word, then drag to extend the selection and let go for the copy and paste menu.
+- To select text, **press and hold** on a word, or tap **Select** in the key row and touch or drag over the text. The selection stays, with a **handle** (a blue stem and knob) at each end: drag a handle to adjust that end, and drag it near the top or bottom edge to scroll. A menu floats over the selection with **Copy**, **Select all**, **Paste** and **More** (copy the line, the screen or all the output). Tap anywhere else, or start typing, to dismiss it.
 - **Press and hold** a computer or a terminal in the lists to rename it. Names are only stored on your phone.
 - Several terminals can be open at once, as tabs.
 - Closing a tab does not end the terminal. To end one, use the trash can button, or swipe it in the list.

@@ -14,7 +14,7 @@ Open a terminal on any of your computers from your phone. A small Go agent on ea
 - **Several terminals at once**, with tabs. Each keeps its own screen when you switch.
 - **Persistent and temporary sessions.** Persistent ones keep running when your phone disconnects. Temporary ones close themselves after a period with no connection (30 minutes by default).
 - **Reconnection that loses nothing.** If the connection drops (for example when switching between Wi-Fi and mobile data) the app reconnects and resumes from the last output it received. If the output it missed no longer fits in the agent's buffer, it tells you.
-- **Copy and paste.** Copy and Paste buttons above the keyboard, and select text with your finger: press and hold to select a word, drag to extend the selection (it scrolls near the edges), and let go for the copy and paste menu (copy the selection, a line, the screen or everything; paste). Pasted text is stripped of control characters, and a multi-line paste into a shell without bracketed paste asks for confirmation first.
+- **Copy and paste.** Select, Copy and Paste buttons above the keyboard. Select text with your finger: press and hold a word, or tap Select and touch or drag over the text. The selection stays, with a handle at each end to adjust it (it scrolls near the edges), and a menu over it to copy it, select everything or paste; More copies a line, the screen or all the output. A tap elsewhere dismisses it. Pasted text is stripped of control characters, and a multi-line paste into a shell without bracketed paste asks for confirmation first.
 - **Pairing by QR code.** Each phone gets its own revocable credential.
 - **Runs as an ordinary user**, as a background service, on macOS, Linux and Windows.
 

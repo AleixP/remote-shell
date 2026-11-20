@@ -1,6 +1,17 @@
 import { describe, expect, test } from 'vitest';
 
-import { type BufferLike, extendSelection, readLineAt, readRows, wordAt } from '@/services/terminalText';
+import {
+  type BufferLike,
+  extendRange,
+  extendSelection,
+  handleColumn,
+  orderRange,
+  readLineAt,
+  readRows,
+  selectArgs,
+  trimSelection,
+  wordAt,
+} from '@/services/terminalText';
 
 /** A buffer from rows; a row starting with "~" continues the previous one (wrapped). */
 function buffer(rows: string[]): BufferLike {
@@ -94,5 +105,87 @@ describe('extendSelection', () => {
     const s = sel(79, 4);
     expect(s).toEqual({ col: 79, row: 4, length: COLS + (14 - 79) + 1 });
     expect(s.length).toBeGreaterThan(0);
+  });
+});
+
+describe('orderRange', () => {
+  test('puts the earlier cell first, whatever the order given', () => {
+    const a = { col: 5, row: 2 };
+    const b = { col: 3, row: 4 };
+    expect(orderRange(a, b)).toEqual({ start: a, end: b });
+    expect(orderRange(b, a)).toEqual({ start: a, end: b });
+  });
+  test('on the same row, the lower column is first', () => {
+    expect(orderRange({ col: 9, row: 1 }, { col: 2, row: 1 })).toEqual({
+      start: { col: 2, row: 1 },
+      end: { col: 9, row: 1 },
+    });
+  });
+  test('a single cell is a range of itself', () => {
+    const c = { col: 4, row: 4 };
+    expect(orderRange(c, c)).toEqual({ start: c, end: c });
+  });
+});
+
+describe('extendRange', () => {
+  const ws = { col: 10, row: 5 };
+  const we = { col: 14, row: 5 };
+  test('keeps the word while the finger is inside it', () => {
+    expect(extendRange(ws, we, { col: 12, row: 5 })).toEqual({ start: ws, end: we });
+  });
+  test('extends forwards and backwards', () => {
+    expect(extendRange(ws, we, { col: 20, row: 6 })).toEqual({ start: ws, end: { col: 20, row: 6 } });
+    expect(extendRange(ws, we, { col: 3, row: 5 })).toEqual({ start: { col: 3, row: 5 }, end: we });
+  });
+});
+
+describe('selectArgs', () => {
+  test('counts the cells of a range, across rows', () => {
+    expect(selectArgs({ start: { col: 2, row: 0 }, end: { col: 5, row: 0 } }, 80)).toEqual({
+      col: 2,
+      row: 0,
+      length: 4,
+    });
+    expect(selectArgs({ start: { col: 70, row: 3 }, end: { col: 4, row: 5 } }, 80)).toEqual({
+      col: 70,
+      row: 3,
+      length: 2 * 80 + (4 - 70) + 1,
+    });
+  });
+});
+
+describe('handleColumn', () => {
+  // 10 px columns starting at x=4, 40 columns
+  const col = (role: 'start' | 'end', x: number) => handleColumn(role, x, 4, 10, 40);
+  test('the start handle belongs to the cell on its right, the end handle to the cell on its left', () => {
+    expect(col('start', 34)).toBe(3); // boundary 3
+    expect(col('end', 34)).toBe(2);
+  });
+  test('it snaps to the nearest boundary', () => {
+    expect(col('start', 38)).toBe(3);
+    expect(col('start', 41)).toBe(4);
+    expect(col('end', 41)).toBe(3);
+  });
+  test('it stays inside the terminal', () => {
+    expect(col('start', -50)).toBe(0);
+    expect(col('end', -50)).toBe(0);
+    expect(col('start', 9999)).toBe(39);
+    expect(col('end', 9999)).toBe(39);
+  });
+});
+
+describe('trimSelection', () => {
+  test('drops the padding at the end of each row', () => {
+    expect(trimSelection('echo hi   \nnext line  ')).toBe('echo hi\nnext line');
+  });
+  test('drops the empty rows after the last line of text', () => {
+    expect(trimSelection('$ ls\nfile\n$ \n\n\n   \n')).toBe('$ ls\nfile\n$');
+  });
+  test('keeps blank rows between lines, and leading blanks', () => {
+    expect(trimSelection('  indented\n\nafter blank')).toBe('  indented\n\nafter blank');
+  });
+  test('a selection of nothing but blanks is empty', () => {
+    expect(trimSelection('   \n  \n')).toBe('');
+    expect(trimSelection('')).toBe('');
   });
 });

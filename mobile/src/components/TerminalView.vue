@@ -1,13 +1,74 @@
 <template>
   <div class="terminal-root">
     <div v-if="state !== 'ready'" class="terminal-banner" role="status">{{ stateLabel }}</div>
+    <div v-if="selection.selectMode.value" class="terminal-banner select-banner" role="status">
+      Drag over the text to select it
+      <button type="button" @click="selection.stopSelectMode()">Cancel</button>
+    </div>
     <div ref="host" v-long-press="onHold" class="terminal-host" />
+    <!-- The selection's handles and menu float over the terminal. Touches on them are
+         hidden from the page, or Ionic's swipe-back would take a drag near the edge. -->
+    <template v-if="layout && selection.range.value">
+      <div
+        v-if="layout.start"
+        class="sel-handle"
+        :style="{ left: `${layout.start.x - 22}px`, top: `${layout.start.y - 38}px` }"
+        aria-label="Start of the selection"
+        role="slider"
+        @touchstart.prevent.stop="selection.handleStart('start', $event)"
+        @touchmove.prevent.stop="selection.handleMove($event)"
+        @touchend.stop="selection.handleEnd()"
+        @touchcancel.stop="selection.handleEnd()"
+      >
+        <span class="sel-stem" :style="{ top: '32px', height: `${layout.cellH + 6}px` }" />
+        <span class="sel-knob" style="top: 20px" />
+      </div>
+      <div
+        v-if="layout.end"
+        class="sel-handle"
+        :style="{ left: `${layout.end.x - 22}px`, top: `${layout.end.y - 6}px` }"
+        aria-label="End of the selection"
+        role="slider"
+        @touchstart.prevent.stop="selection.handleStart('end', $event)"
+        @touchmove.prevent.stop="selection.handleMove($event)"
+        @touchend.stop="selection.handleEnd()"
+        @touchcancel.stop="selection.handleEnd()"
+      >
+        <span class="sel-stem" :style="{ top: `${6 - layout.cellH}px`, height: `${layout.cellH}px` }" />
+        <span class="sel-knob" style="top: 12px" />
+      </div>
+      <div
+        v-if="menuVisible"
+        class="sel-menu"
+        :class="{ below: layout.menuBelow }"
+        :style="menuStyle"
+        role="menu"
+        @pointerdown.prevent
+        @touchstart.stop
+        @touchmove.stop
+      >
+        <button type="button" role="menuitem" @click="copySelection">Copy</button>
+        <button type="button" role="menuitem" @click="selection.selectAll()">Select all</button>
+        <button type="button" role="menuitem" @click="pasteAndClear">Paste</button>
+        <button type="button" role="menuitem" @click="showMore">More</button>
+      </div>
+    </template>
     <div class="terminal-keys" role="toolbar" aria-label="Terminal keys">
       <!-- pointerdown + preventDefault keeps the focus (and the keyboard) on the terminal -->
       <button type="button" @pointerdown.prevent="send(KEY_ESC)">Esc</button>
       <button type="button" @pointerdown.prevent="send(KEY_TAB)">Tab</button>
       <button type="button" :class="{ active: ctrl }" :aria-pressed="ctrl" @pointerdown.prevent="ctrl = !ctrl">
         Ctrl
+      </button>
+      <button
+        type="button"
+        aria-label="Select text"
+        :class="{ active: selection.selectMode.value }"
+        :aria-pressed="selection.selectMode.value"
+        @pointerdown.prevent
+        @click="selection.toggleSelectMode()"
+      >
+        Select
       </button>
       <button type="button" aria-label="Copy" @pointerdown.prevent @click="copySelectionOrScreen">Copy</button>
       <button type="button" aria-label="Paste" @pointerdown.prevent @click="pasteFromClipboard()">Paste</button>
@@ -35,7 +96,7 @@ import { longPress } from '@/directives/longPress';
 import { readClipboard, writeClipboard } from '@/services/clipboard';
 import { checkPaste, MAX_PASTE_BYTES } from '@/services/paste';
 import { TerminalConnection, type ConnectionState } from '@/services/terminalConnection';
-import { readLineAt, readRows } from '@/services/terminalText';
+import { readLineAt, readRows, trimSelection } from '@/services/terminalText';
 import { applyCtrl, arrowSequence, KEY_ESC, KEY_TAB, type Arrow } from '@/services/terminalKeys';
 import { useComputersStore } from '@/stores/computers';
 
@@ -119,6 +180,7 @@ function arrow(dir: Arrow): void {
 
 // Ctrl applies to the next key typed on the soft keyboard, then releases.
 function fromKeyboard(data: string): void {
+  if (selection.range.value) selection.clear();
   if (ctrl.value) {
     ctrl.value = false;
     connection?.sendInput(applyCtrl(data));
@@ -148,8 +210,9 @@ function screenText(): string {
 
 // The Copy button: what is selected, or else what is on the screen.
 function copySelectionOrScreen(): void {
-  const selection = term?.getSelection();
-  void (selection ? copyText(selection, 'selection') : copyText(screenText(), 'screen'));
+  const selected = trimSelection(term?.getSelection() ?? '');
+  void (selected ? copyText(selected, 'selection') : copyText(screenText(), 'screen'));
+  selection.clear();
   term?.focus();
 }
 
@@ -200,41 +263,58 @@ function onPasteEvent(e: ClipboardEvent): void {
   void pasteFromClipboard(e.clipboardData?.getData('text/plain') ?? '');
 }
 
-// Press and hold, like a native app: select the word under the finger, drag to
-// extend it, and let go to get copy and paste.
+// Selecting with a finger: press and hold a word, or turn on Select. The selection
+// stays, with a handle at each end and a menu over it.
 const selection = useTerminalSelection(
   () => term,
   () => host.value,
-  ({ text, row }) => void showSelectionMenu(text, row),
 );
+const layout = selection.layout;
 
 function onHold(e: PointerEvent): void {
   selection.begin(e);
 }
 
-async function showSelectionMenu(text: string, row: number | null): Promise<void> {
+const menuVisible = computed(
+  () => !!selection.range.value && !!layout.value && !selection.gesturing.value && !selection.draggingHandle.value,
+);
+
+// Keep the menu inside the screen: it is about 190 px wide and centred on its point.
+const menuStyle = computed(() => {
+  const l = layout.value;
+  return l ? { left: `clamp(100px, ${l.menu.x}px, calc(100% - 100px))`, top: `${l.menu.y}px` } : {};
+});
+
+function copySelection(): void {
+  const text = trimSelection(term?.getSelection() ?? '');
+  selection.clear();
+  void copyText(text, 'text');
+  term?.focus();
+}
+
+function pasteAndClear(): void {
+  selection.clear();
+  void pasteFromClipboard();
+}
+
+/** More ways to copy: the line the selection starts on, the screen, or everything. */
+async function showMore(): Promise<void> {
   const t = term;
-  if (!t) return;
+  const r = selection.range.value;
+  if (!t || !r) return;
   const buffer = t.buffer.active;
-  const buttons: { text: string; role?: string; handler?: () => void }[] = [];
-  if (text.trim()) buttons.push({ text: 'Copy', handler: () => void copyText(text, 'text') });
-  if (row !== null && !text.includes('\n')) {
-    buttons.push({ text: 'Copy line', handler: () => void copyText(readLineAt(buffer, row), 'line') });
-  }
-  buttons.push(
-    { text: 'Copy screen', handler: () => void copyText(screenText(), 'screen') },
-    { text: 'Copy all output', handler: () => void copyText(readRows(buffer, 0, buffer.length - 1), 'output') },
-    { text: 'Paste', handler: () => void pasteFromClipboard() },
-    { text: 'Cancel', role: 'cancel' },
-  );
-  const oneLine = text.replace(/\s+/g, ' ').trim();
+  const row = r.start.row;
   const sheet = await actionSheetController.create({
-    header: oneLine ? (oneLine.length > 40 ? `${oneLine.slice(0, 40)}…` : oneLine) : undefined,
-    buttons,
+    buttons: [
+      { text: 'Copy line', handler: () => void copyText(readLineAt(buffer, row), 'line') },
+      { text: 'Copy screen', handler: () => void copyText(screenText(), 'screen') },
+      { text: 'Copy all output', handler: () => void copyText(readRows(buffer, 0, buffer.length - 1), 'output') },
+      { text: 'Cancel', role: 'cancel' },
+    ],
   });
   await sheet.present();
   void sheet.onDidDismiss().then(() => {
-    t.clearSelection();
+    selection.clear();
     t.focus();
   });
 }
@@ -256,6 +336,7 @@ onMounted(async () => {
   fitIfVisible();
   term = t;
   fitAddon = fit;
+  selection.bindTerminal(t);
   void setIosAccessoryBar(false);
 
   observer = new ResizeObserver(() => fitIfVisible());
@@ -319,6 +400,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .terminal-root {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -327,7 +409,15 @@ onBeforeUnmount(() => {
 .terminal-host {
   flex: 1;
   min-height: 0;
-  padding: 4px;
+}
+/* The padding goes on xterm's own element, not on the container: the fit addon
+   works out the rows from the container's height minus the padding of the
+   terminal element only, so padding on the container made the terminal taller
+   than the space it has and it ran over the key row. The extra room above the
+   first row is for the knob of a selection handle: without it the knob would
+   sit under the page header, out of reach of a finger. */
+.terminal-host :deep(.xterm) {
+  padding: 24px 4px 4px;
 }
 .terminal-banner {
   padding: 4px 12px;
@@ -335,6 +425,88 @@ onBeforeUnmount(() => {
   text-align: center;
   color: #000;
   background: #f5c542;
+}
+/* Floats over the terminal instead of taking space: if it did, the terminal would
+   shrink when select mode starts, the shell would be resized and redraw, and the
+   text under the finger would move. Touches pass through it, except on Cancel. */
+.select-banner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  pointer-events: none;
+}
+.select-banner button {
+  pointer-events: auto;
+  min-height: 28px;
+  padding: 0 12px;
+  font: inherit;
+  color: #f5c542;
+  background: #000;
+  border: 0;
+  border-radius: 6px;
+}
+/* The selection's handles: a stem along the first or last row with a knob above or
+   below it, like the system's, inside a 44 px square so a finger can grab them. */
+.sel-handle {
+  position: absolute;
+  z-index: 6;
+  width: 44px;
+  height: 44px;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.sel-stem {
+  position: absolute;
+  left: 21px;
+  width: 2px;
+  background: #0a84ff;
+  pointer-events: none;
+}
+.sel-knob {
+  position: absolute;
+  left: 16px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #0a84ff;
+  pointer-events: none;
+}
+.sel-menu {
+  position: absolute;
+  z-index: 7;
+  display: flex;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #2c2c2e;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 50%);
+  transform: translate(-50%, calc(-100% - 10px));
+}
+.sel-menu.below {
+  transform: translate(-50%, 18px);
+}
+.sel-menu button {
+  min-height: 40px;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 14px;
+  color: #fff;
+  background: transparent;
+  border: 0;
+  border-right: 1px solid #48484a;
+  white-space: nowrap;
+}
+.sel-menu button:last-child {
+  border-right: 0;
+}
+.sel-menu button:active {
+  background: #48484a;
 }
 .terminal-keys {
   display: flex;
