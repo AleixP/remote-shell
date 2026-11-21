@@ -108,9 +108,12 @@ export function handleColumn(role: 'start' | 'end', edgeX: number, left: number,
  * (selecting everything also selects the unused rows below the prompt).
  */
 export function trimSelection(text: string): string {
-  return text
+  const joined = text
     .split('\n')
-    .map((line) => line.replace(/\s+$/, ''))
-    .join('\n')
-    .replace(/\n+$/, '');
+    .map((line) => line.trimEnd())
+    .join('\n');
+  // A loop, not /\n+$/: that takes time proportional to the square of a long run of blank rows.
+  let end = joined.length;
+  while (end > 0 && joined[end - 1] === '\n') end--;
+  return joined.slice(0, end);
 }

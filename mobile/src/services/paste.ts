@@ -30,11 +30,22 @@ export interface PasteCheck {
   needsConfirm: boolean;
 }
 
+/**
+ * `text` without the line breaks at its end. A loop, not a regular expression
+ * like /(\r\n|\r|\n)+$/: that one takes time proportional to the square of a long
+ * run of line breaks that is not at the end, and pasted text is not trusted.
+ */
+export function trimTrailingNewlines(text: string): string {
+  let end = text.length;
+  while (end > 0 && (text[end - 1] === '\n' || text[end - 1] === '\r')) end--;
+  return text.slice(0, end);
+}
+
 /** Decides what to do with clipboard text before it reaches the terminal. */
 export function checkPaste(raw: string, bracketedPasteMode: boolean): PasteCheck {
   const text = sanitizePaste(raw);
   const tooLarge = new TextEncoder().encode(text).length > MAX_PASTE_BYTES;
-  const body = text.replace(/(\r\n|\r|\n)+$/, '');
+  const body = trimTrailingNewlines(text);
   const lines = body === '' ? 0 : body.split(/\r\n|\r|\n/).length;
   const multiline = /[\r\n]/.test(body);
   return { text, empty: text === '', tooLarge, lines, needsConfirm: multiline && !bracketedPasteMode };

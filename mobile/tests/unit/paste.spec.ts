@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { checkPaste, MAX_PASTE_BYTES, sanitizePaste } from '@/services/paste';
+import { checkPaste, MAX_PASTE_BYTES, sanitizePaste, trimTrailingNewlines } from '@/services/paste';
 
 describe('sanitizePaste', () => {
   test('keeps ordinary text, tabs and line breaks', () => {
@@ -47,5 +47,29 @@ describe('checkPaste', () => {
 
   test('returns the sanitized text', () => {
     expect(checkPaste('ok\x1b[201~', true).text).toBe('ok[201~');
+  });
+});
+
+describe('trimTrailingNewlines', () => {
+  test('removes every line break at the end, of any kind', () => {
+    expect(trimTrailingNewlines('a\n\n')).toBe('a');
+    expect(trimTrailingNewlines('a\r\n\r\n')).toBe('a');
+    expect(trimTrailingNewlines('a\r')).toBe('a');
+    expect(trimTrailingNewlines('a \n')).toBe('a ');
+  });
+  test('keeps the ones in the middle and leading ones', () => {
+    expect(trimTrailingNewlines('\na\n\nb\n')).toBe('\na\n\nb');
+  });
+  test('nothing but line breaks, or nothing, is empty', () => {
+    expect(trimTrailingNewlines('\n\r\n')).toBe('');
+    expect(trimTrailingNewlines('')).toBe('');
+  });
+  test('stays fast on a long run of line breaks that is not at the end', () => {
+    // Each of these took minutes with the regular expression it replaced.
+    const text = '\n'.repeat(300_000) + 'x';
+    const started = Date.now();
+    expect(trimTrailingNewlines(text)).toBe(text);
+    expect(checkPaste(text, true).lines).toBe(300_001);
+    expect(Date.now() - started).toBeLessThan(1000);
   });
 });

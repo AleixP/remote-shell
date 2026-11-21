@@ -37,4 +37,16 @@ describe('parsePairingUrl', () => {
   ])('rejects %s', (_label, input) => {
     expect(() => parsePairingUrl(input)).toThrow(PairingError);
   });
+
+  test('rejects absurdly long input without trying to parse it', () => {
+    expect(() => parsePairingUrl('remoteshell://pair?v=1&host=a.ts.net&code=' + 'A'.repeat(5000))).toThrow(
+      PairingError,
+    );
+    expect(() => parsePairingUrl('x'.repeat(100_000))).toThrow(PairingError);
+  });
+
+  test('rejects a host longer than any DNS name', () => {
+    const host = `${'a'.repeat(300)}.ts.net:8443`;
+    expect(() => parsePairingUrl(`remoteshell://pair?v=1&host=${host}&code=${CODE}&name=x`)).toThrow(/invalid host/);
+  });
 });

@@ -15,6 +15,10 @@ export interface PairingInfo {
 
 // hostname[:port] with DNS-name characters only; no userinfo, path or query.
 const HOST_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*(:\d{1,5})?$/i;
+// A real link is well under 200 characters; this only has to stop absurd input
+// from reaching the parser. A DNS name is at most 253 characters.
+const MAX_LINK_LENGTH = 2048;
+const MAX_HOST_LENGTH = 260;
 // 128-bit codes encoded as unpadded base32.
 const CODE_RE = /^[A-Z2-7]{26}$/;
 
@@ -24,6 +28,7 @@ const CODE_RE = /^[A-Z2-7]{26}$/;
  */
 export function parsePairingUrl(text: string): PairingInfo {
   let url: URL;
+  if (text.length > MAX_LINK_LENGTH) throw new PairingError('This is not a Remote Shell pairing code.');
   try {
     url = new URL(text.trim());
   } catch {
@@ -38,7 +43,7 @@ export function parsePairingUrl(text: string): PairingInfo {
   }
   const host = q.get('host') ?? '';
   const code = q.get('code') ?? '';
-  if (!HOST_RE.test(host)) {
+  if (host.length > MAX_HOST_LENGTH || !HOST_RE.test(host)) {
     throw new PairingError('The pairing code contains an invalid host.');
   }
   const port = host.split(':')[1];

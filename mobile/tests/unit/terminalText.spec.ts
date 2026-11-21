@@ -184,6 +184,12 @@ describe('trimSelection', () => {
   test('keeps blank rows between lines, and leading blanks', () => {
     expect(trimSelection('  indented\n\nafter blank')).toBe('  indented\n\nafter blank');
   });
+  test('stays fast on a long run of blank rows that is not at the end', () => {
+    const text = '\n'.repeat(300_000) + 'x';
+    const started = Date.now();
+    expect(trimSelection(text)).toBe(text);
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
   test('a selection of nothing but blanks is empty', () => {
     expect(trimSelection('   \n  \n')).toBe('');
     expect(trimSelection('')).toBe('');
