@@ -10,6 +10,11 @@ set -euo pipefail
 
 VERSION="${1:?usage: scripts/build-release.sh <version>}"
 VERSION="${VERSION#v}"
+# MAJOR.MINOR.PATCH, optionally with a pre-release suffix such as -rc.1.
+if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+  echo "error: '$VERSION' is not a version like 1.2.3 or 1.2.3-rc.1" >&2
+  exit 2
+fi
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="$ROOT/dist"
 PKG="github.com/AleixP/remote-shell/agent/internal/server.Version"

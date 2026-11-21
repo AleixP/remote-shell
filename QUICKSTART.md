@@ -95,7 +95,7 @@ Certificates last about 90 days. See [Renewing the certificate](#renewing-the-ce
 
 Pick one.
 
-**Download:** get the archive for your system from the [releases](../../releases) page and unpack `remote-shell` (`remote-shell.exe` on Windows).
+**Download:** get the archive for your system from the [releases](../../releases) page and unpack `remote-shell` (`remote-shell.exe` on Windows). Verify it first, and expect a warning on macOS and Windows because the binaries are not signed: see [Install the agent](README.md#install-the-agent).
 
 **Build:**
 

@@ -47,13 +47,31 @@ Each agent is independent: it owns its shells, its list of authorized phones (in
 
 ## Install the agent
 
-Download the archive for your system from the [releases](../../releases) page, check it against `SHA256SUMS` and unpack `remote-shell` (`remote-shell.exe` on Windows), or build it yourself:
+Download the archive for your system from the [releases](../../releases) page and unpack `remote-shell` (`remote-shell.exe` on Windows), or build it yourself:
 
 ```bash
 cd agent
 go build -o remote-shell ./cmd/remote-shell
 ./remote-shell version
 ```
+
+This program gives a shell on your computer, so check what you download.
+
+**Verify a download.** Every archive is built by this repository's release workflow, which records where it came from (a build provenance attestation) and publishes `SHA256SUMS`. With the [GitHub CLI](https://cli.github.com):
+
+```bash
+gh attestation verify remote-shell_<version>_<os>_<arch>.tar.gz --repo AleixP/remote-shell
+shasum -a 256 -c SHA256SUMS --ignore-missing    # sha256sum -c on Linux
+```
+
+The first command fails if the file was not built by that workflow from this repository, or was changed afterwards.
+
+**The binaries are not signed or notarized**, because that needs paid developer accounts. Your system may warn about it:
+
+- **macOS** may say it cannot verify the developer, if the archive came from a browser. Check it as above, then remove the quarantine mark: `xattr -dr com.apple.quarantine remote-shell`.
+- **Windows** SmartScreen may show "Windows protected your PC": choose *More info*, then *Run anyway*, after verifying the file.
+
+Building it yourself avoids both.
 
 ### 1. Get a TLS certificate for the computer
 

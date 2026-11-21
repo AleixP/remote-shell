@@ -1,13 +1,18 @@
 name: Release
 
-# Pushing a tag such as v0.2.0 tests the agent, builds it for every supported
-# platform and publishes the archives and checksums as a GitHub release.
+# Pushing a tag such as v0.1.0 tests the agent, builds it for every supported
+# platform, records where the files came from (build provenance) and publishes
+# the archives and checksums as a GitHub release. The notes come from the
+# matching section of CHANGELOG.md, and versions below 1.0.0 are marked as
+# pre-releases.
 on:
   push:
     tags: ["v*"]
 
 permissions:
   contents: write
+  id-token: write # to sign the build provenance
+  attestations: write
 
 jobs:
   release:
@@ -21,9 +26,30 @@ jobs:
       - name: Test
         working-directory: agent
         run: go test ./...
+      # Fails here, before anything is published, if the version has no notes.
+      - name: Release notes
+        run: scripts/release-notes.sh "$GITHUB_REF_NAME" > release-notes.md
       - name: Build release archives
         run: scripts/build-release.sh "$GITHUB_REF_NAME"
+      # The version is baked into the binary at build time: check it took.
+      - name: Check the version inside the binary
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          tar -xzf "dist/remote-shell_${version}_linux_amd64.tar.gz" -C "$RUNNER_TEMP" remote-shell
+          got="$("$RUNNER_TEMP/remote-shell" version)"
+          test "$got" = "remote-shell ${version}" || { echo "binary says '$got', expected 'remote-shell ${version}'"; exit 1; }
+      - name: Attest the build
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: |
+            dist/remote-shell_*
+            dist/SHA256SUMS
       - name: Publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" --generate-notes
+        run: |
+          flags=""
+          case "${GITHUB_REF_NAME#v}" in
+            0.* | *-*) flags="--prerelease" ;;
+          esac
+          gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" --notes-file release-notes.md $flags
